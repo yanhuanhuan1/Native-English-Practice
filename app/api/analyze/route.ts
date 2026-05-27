@@ -1,0 +1,79 @@
+import { NextResponse } from "next/server";
+import { requestChatCompletion } from "@/lib/ai/client";
+import { coerceApiSettings, getProviderPreset } from "@/lib/ai/config";
+import { buildInsightMessages } from "@/lib/scoring/prompt";
+import type { Attempt, InsightReport } from "@/types/scoring";
+import type { ApiSettings } from "@/types/settings";
+
+interface AnalyzeRequestBody {
+  attempts: Attempt[];
+  previousReports: InsightReport[];
+  settings?: Partial<ApiSettings>;
+}
+
+function resolveSettings(clientSettings?: Partial<ApiSettings>): ApiSettings {
+  const serverKey = process.env.API_KEY?.trim();
+  if (serverKey) {
+    return coerceApiSettings({
+      apiKey: serverKey,
+      providerId: process.env.API_PROVIDER_ID ?? clientSettings?.providerId,
+      model: process.env.API_MODEL ?? clientSettings?.model,
+      baseUrl: process.env.API_BASE_URL ?? clientSettings?.baseUrl
+    });
+  }
+  return coerceApiSettings(clientSettings);
+}
+
+export async function POST(request: Request) {
+  let body: AnalyzeRequestBody;
+  try {
+    body = (await request.json()) as AnalyzeRequestBody;
+  } catch {
+    return NextResponse.json({ error: "请求格式不正确。" }, { status: 400 });
+  }
+
+  const settings = resolveSettings(body.settings);
+  const provider = getProviderPreset(settings.providerId);
+
+  if (!settings.apiKey) {
+    return NextResponse.json({ error: `请先在设置里填写 ${provider.apiKeyLabel}。` }, { status: 401 });
+  }
+  if (!body.attempts?.length) {
+    return NextResponse.json({ error: "没有可分析的练习记录。" }, { status: 400 });
+  }
+
+  try {
+    const raw = await requestChatCompletion({
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+      provider,
+      messages: buildInsightMessages(body.attempts, body.previousReports ?? []),
+      temperature: 0.3,
+      jsonMode: true
+    });
+
+    const data = JSON.parse(raw) as {
+      weaknesses: string[];
+      vocabularyIssues: string[];
+      analysis: string;
+      improvement?: string;
+    };
+
+    const report: InsightReport = {
+      generatedAt: new Date().toISOString(),
+      attemptCount: body.attempts.length,
+      weaknesses: data.weaknesses ?? [],
+      vocabularyIssues: data.vocabularyIssues ?? [],
+      analysis: data.analysis ?? "",
+      improvement: data.improvement
+    };
+
+    return NextResponse.json({ report });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? `分析失败：${error.message}` : "分析失败，请稍后重试。" },
+      { status: 502 }
+    );
+  }
+}
