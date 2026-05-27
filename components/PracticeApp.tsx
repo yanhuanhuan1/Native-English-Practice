@@ -549,6 +549,7 @@ export function PracticeApp() {
       <SettingsModal
         open={isSettingsOpen}
         settings={settings}
+        hasServerKey={hasServerKey}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
       />

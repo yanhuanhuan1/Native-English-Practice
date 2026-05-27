@@ -13,6 +13,7 @@ import type { ApiSettings } from "@/types/settings";
 interface SettingsModalProps {
   open: boolean;
   settings: ApiSettings;
+  hasServerKey?: boolean;
   onClose: () => void;
   onSave: (settings: ApiSettings) => void;
 }
@@ -20,6 +21,7 @@ interface SettingsModalProps {
 export function SettingsModal({
   open,
   settings,
+  hasServerKey = false,
   onClose,
   onSave
 }: SettingsModalProps) {
@@ -112,21 +114,27 @@ export function SettingsModal({
             <p>{selectedProvider.note}</p>
           </div>
 
-          <label>
-            <span>{selectedProvider.apiKeyLabel}</span>
-            <input
-              autoComplete="off"
-              placeholder="只保存在本机浏览器里"
-              type="password"
-              value={draft.apiKey}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  apiKey: event.target.value
-                }))
-              }
-            />
-          </label>
+          {hasServerKey ? (
+            <div className="server-key-notice">
+              API Key 已由服务端统一配置，无需填写。
+            </div>
+          ) : (
+            <label>
+              <span>{selectedProvider.apiKeyLabel}</span>
+              <input
+                autoComplete="off"
+                placeholder="只保存在本机浏览器里"
+                type="password"
+                value={draft.apiKey}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    apiKey: event.target.value
+                  }))
+                }
+              />
+            </label>
+          )}
 
           <label>
             <span>模型名称</span>

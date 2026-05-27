@@ -1546,3 +1546,12 @@ textarea:focus {
   gap: 8px;
   margin-top: 16px;
 }
+
+.server-key-notice {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
