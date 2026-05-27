@@ -14,12 +14,14 @@ interface AnalyzeRequestBody {
 function resolveSettings(clientSettings?: Partial<ApiSettings>): ApiSettings {
   const serverKey = process.env.API_KEY?.trim();
   if (serverKey) {
-    return coerceApiSettings({
+    const providerId = process.env.API_PROVIDER_ID?.trim() ?? "deepseek";
+    const preset = getProviderPreset(providerId);
+    return {
       apiKey: serverKey,
-      providerId: process.env.API_PROVIDER_ID ?? clientSettings?.providerId,
-      model: process.env.API_MODEL ?? clientSettings?.model,
-      baseUrl: process.env.API_BASE_URL ?? clientSettings?.baseUrl
-    });
+      providerId: preset.id,
+      baseUrl: process.env.API_BASE_URL?.trim() || preset.baseUrl,
+      model: process.env.API_MODEL?.trim() || preset.model
+    };
   }
   return coerceApiSettings(clientSettings);
 }
