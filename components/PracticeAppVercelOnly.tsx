@@ -1,16 +1,18 @@
 "use client";
 
-import { ArrowLeft, BarChart2, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, BarChart2, RefreshCcw, RotateCcw, Square, Volume2, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { HistoryPanel } from "@/components/HistoryPanel";
 import { VocabText } from "@/components/VocabText";
 import {
   appendAttempt,
   loadGeneratedScenarios,
+  loadAttempts,
   loadInsight,
   saveGeneratedScenarios,
   saveInsight
 } from "@/lib/storage";
-import { DIFFICULTY_OPTIONS, type Difficulty, type Scenario } from "@/types/scenario";
+import { DIFFICULTY_OPTIONS, TOPIC_OPTIONS, type Difficulty, type Scenario, type Topic } from "@/types/scenario";
 import type { Attempt, InsightReport, InsightState, ScoreResult } from "@/types/scoring";
 
 type AppScreen = "setup" | "practice" | "result";
@@ -36,6 +38,7 @@ interface ServerConfigResponse {
 
 const ANALYZE_EVERY = 10;
 const BIG_SUMMARY_AT = 100;
+const RECENT_PROGRESS_WINDOW = 5;
 const SCREEN_TRANSITION_OUT_MS = 150;
 const SCREEN_TRANSITION_IN_DELAY_MS = 40;
 const SCREEN_TRANSITION_IN_MS = 170;
@@ -65,7 +68,9 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   const [answer, setAnswer] = useState("");
   const [submittedAnswer, setSubmittedAnswer] = useState("");
   const [result, setResult] = useState<ScoreResult | null>(null);
+  const [attempts, setAttempts] = useState<Attempt[]>(() => loadAttempts());
   const [cachedScenario, setCachedScenario] = useState<Scenario | null>(null);
+  const [selectedHistoryAttempt, setSelectedHistoryAttempt] = useState<Attempt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPrefetching, setIsPrefetching] = useState(false);
@@ -79,8 +84,11 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   const [recentGeneratedScenarios, setRecentGeneratedScenarios] = useState<Scenario[]>(
     () => loadGeneratedScenarios()
   );
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const transitionTimerRefs = useRef<number[]>([]);
+  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     setInsight(loadInsight());
@@ -115,7 +123,15 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   }, [answer, screen]);
 
   useEffect(() => {
+    setSpeechSupported(typeof window !== "undefined" && "speechSynthesis" in window);
+  }, []);
+
+  useEffect(() => {
     return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
       for (const timerId of transitionTimerRefs.current) {
         window.clearTimeout(timerId);
       }
@@ -126,6 +142,12 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   useEffect(() => {
     saveGeneratedScenarios(recentGeneratedScenarios);
   }, [recentGeneratedScenarios]);
+
+  useEffect(() => {
+    if (screen !== "result" && isSpeaking) {
+      stopSpeech();
+    }
+  }, [screen, isSpeaking]);
 
   async function handleGenerateScenario(difficulty = selectedDifficulty) {
     if (transition) {
@@ -143,6 +165,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     setResult(null);
     setAnswer("");
     setSubmittedAnswer("");
+    setSelectedHistoryAttempt(null);
 
     try {
       const recentPromptZh = buildRecentPromptList([
@@ -259,6 +282,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
     setIsScoring(true);
     setError(null);
+    setSelectedHistoryAttempt(null);
     const trimmedAnswer = answer.trim();
 
     try {
@@ -294,6 +318,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
         createdAt: new Date().toISOString()
       };
       const allAttempts = appendAttempt(attempt);
+      setAttempts(allAttempts);
       const nextInsight: InsightState = {
         ...insight,
         totalAttempts: insight.totalAttempts + 1
@@ -316,6 +341,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
       return;
     }
 
+    setSelectedHistoryAttempt(null);
     transitionTo("setup", () => {
       setScenario(null);
       setAnswer("");
@@ -332,6 +358,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     }
 
     if (cachedScenario) {
+      setSelectedHistoryAttempt(null);
       setScenario(cachedScenario);
       setSelectedDifficulty(cachedScenario.difficulty);
       setCachedScenario(null);
@@ -387,6 +414,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
       return;
     }
 
+    stopSpeech();
     for (const timerId of transitionTimerRefs.current) {
       window.clearTimeout(timerId);
     }
@@ -424,6 +452,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     const prompts = [
       scenario?.promptZh,
       cachedScenario?.promptZh,
+      ...attempts.slice(-8).map((item) => item.scenarioPromptZh),
       ...recentGeneratedScenarios.map((item) => item.promptZh),
       ...extraPrompts
     ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
@@ -448,9 +477,73 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     return result;
   }
 
+  function handleReplayCurrentScenario() {
+    if (transition || !scenario) {
+      return;
+    }
+
+    setError(null);
+    setSelectedHistoryAttempt(null);
+    setAnswer("");
+    transitionTo("practice", () => {
+      setSubmittedAnswer("");
+      setResult(null);
+    });
+  }
+
+  function handleSelectHistoryAttempt(attempt: Attempt) {
+    setSelectedHistoryAttempt(attempt);
+  }
+
+  function handleSpeakBetterAnswer(text: string) {
+    if (!speechSupported || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setError("当前浏览器不支持朗读功能。");
+      return;
+    }
+
+    stopSpeech();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+    };
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+    };
+
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice =
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ?? voices[0] ?? null;
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    speechUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopSpeech() {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    speechUtteranceRef.current = null;
+    setIsSpeaking(false);
+  }
+
   const configNotice =
     aiConfigured === false ? "AI 服务尚未配置，请先在 Vercel 环境变量里设置 API_KEY。" : null;
   const isTransitioning = transition !== null;
+  const recentProgress = getRecentProgress(attempts);
+  const currentReviewAttempt = selectedHistoryAttempt;
 
   return (
     <main className="minimal-app">
@@ -604,22 +697,16 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
           <div className="result-score-row">
             <div className="result-score-num">{Math.round(result.score)}</div>
             <div className="result-score-right">
-              <span className="result-score-label">口语自然度</span>
-              <div className="compact-metrics">
-                {scoreLabels.map(({ key, label }) => {
-                  const value = result[key];
-                  return typeof value === "number" ? (
-                    <div key={key} className="metric-cell">
-                      <span>{label}</span>
-                      <strong>{Math.round(value)}</strong>
-                      <div className="metric-mini-bar">
-                        <div style={{ width: `${value}%` }} />
-                      </div>
-                    </div>
-                  ) : null;
-                })}
-              </div>
+              <span className="result-score-label">本次口语自然度</span>
+              <p className="result-score-note">
+                先看整体感觉，再往下看更自然的说法和可直接拿走的口语块。
+              </p>
             </div>
+          </div>
+
+          <div className="coach-spotlight">
+            <span className="coach-spotlight-label">这次先抓这一点</span>
+            <p>{result.feedbackZh}</p>
           </div>
 
           <div className="result-compare">
@@ -641,14 +728,45 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
                   ))}
                 </div>
               )}
+              <div className="speak-actions">
+                <button
+                  className="ghost-button"
+                  disabled={!speechSupported || isSpeaking}
+                  type="button"
+                  onClick={() => handleSpeakBetterAnswer(result.betterAnswer)}
+                >
+                  <Volume2 size={16} aria-hidden="true" />
+                  {isSpeaking ? "正在朗读" : "朗读推荐说法"}
+                </button>
+                {isSpeaking ? (
+                  <button className="ghost-button" type="button" onClick={stopSpeech}>
+                    <Square size={16} aria-hidden="true" />
+                    停止
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
 
-          <div className="result-detail-grid">
-            <div className="result-block">
-              <h2>反馈</h2>
-              <p>{result.feedbackZh}</p>
+          <details className="result-metrics-details">
+            <summary>展开分项分数</summary>
+            <div className="compact-metrics">
+              {scoreLabels.map(({ key, label }) => {
+                const value = result[key];
+                return typeof value === "number" ? (
+                  <div key={key} className="metric-cell">
+                    <span>{label}</span>
+                    <strong>{Math.round(value)}</strong>
+                    <div className="metric-mini-bar">
+                      <div style={{ width: `${value}%` }} />
+                    </div>
+                  </div>
+                ) : null;
+              })}
             </div>
+          </details>
+
+          <div className="result-detail-grid">
             <div className="result-block">
               <h2>为什么更自然</h2>
               <p>{result.whyBetterZh}</p>
@@ -678,6 +796,15 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
               换难度
             </button>
             <button
+              className="ghost-button"
+              disabled={isGenerating || isPrefetching || isTransitioning || !scenario}
+              onClick={handleReplayCurrentScenario}
+              type="button"
+            >
+              <RefreshCcw size={16} aria-hidden="true" />
+              重写本题
+            </button>
+            <button
               className="start-button"
               disabled={
                 isGenerating ||
@@ -692,6 +819,42 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
               {isPrefetching || isGenerating ? "准备中…" : "再来一句"}
             </button>
           </div>
+
+          <div className="result-history-area">
+            <div className="progress-summary">
+              <div className="progress-summary-head">
+                <h2>练习轨迹</h2>
+                <span>{attempts.length} 次</span>
+              </div>
+              <div className="progress-summary-grid">
+                <div className="progress-stat">
+                  <span>最近 5 次平均</span>
+                  <strong>{recentProgress.averageLabel}</strong>
+                </div>
+                <div className="progress-stat">
+                  <span>当前最好分</span>
+                  <strong>{recentProgress.bestLabel}</strong>
+                </div>
+                <div className="progress-stat">
+                  <span>较上次变化</span>
+                  <strong>{recentProgress.deltaLabel}</strong>
+                </div>
+                <div className="progress-stat">
+                  <span>统计窗口</span>
+                  <strong>{recentProgress.sampleCountLabel}</strong>
+                </div>
+              </div>
+            </div>
+
+            <HistoryPanel attempts={attempts} onSelect={handleSelectHistoryAttempt} />
+          </div>
+
+          {currentReviewAttempt ? (
+            <HistoryReviewCard
+              attempt={currentReviewAttempt}
+              onClear={() => setSelectedHistoryAttempt(null)}
+            />
+          ) : null}
 
           {error ? <p className="inline-error">{error}</p> : null}
         </section>
@@ -833,6 +996,149 @@ function getDifficultyHint(value: Difficulty): string {
     case "advanced":
       return "更本土、更自然，也更像真人会说的话";
   }
+}
+
+interface RecentProgressSummary {
+  averageLabel: string;
+  bestLabel: string;
+  deltaLabel: string;
+  sampleCountLabel: string;
+}
+
+function getRecentProgress(attempts: Attempt[]): RecentProgressSummary {
+  const recentAttempts = attempts.slice(-RECENT_PROGRESS_WINDOW);
+  const recentScores = recentAttempts.map((attempt) => attempt.result.score);
+  const average =
+    recentScores.length > 0
+      ? recentScores.reduce((sum, score) => sum + score, 0) / recentScores.length
+      : null;
+  const best = attempts.length > 0 ? Math.max(...attempts.map((attempt) => attempt.result.score)) : null;
+  const current = attempts.at(-1)?.result.score ?? null;
+  const previous = attempts.at(-2)?.result.score ?? null;
+  const delta = current != null && previous != null ? current - previous : null;
+
+  return {
+    averageLabel: formatScoreLabel(average),
+    bestLabel: formatScoreLabel(best),
+    deltaLabel: formatDeltaLabel(delta),
+    sampleCountLabel: `${recentAttempts.length}/${RECENT_PROGRESS_WINDOW}`
+  };
+}
+
+function formatScoreLabel(value: number | null): string {
+  if (value == null || Number.isNaN(value)) {
+    return "暂无";
+  }
+
+  return `${Math.round(value)} 分`;
+}
+
+function formatDeltaLabel(value: number | null): string {
+  if (value == null || Number.isNaN(value)) {
+    return "—";
+  }
+
+  const rounded = Math.round(value);
+  if (rounded === 0) {
+    return "持平";
+  }
+
+  return `${rounded > 0 ? "+" : ""}${rounded} 分`;
+}
+
+function getTopicLabel(value: Topic): string {
+  return TOPIC_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function formatAttemptTime(value: string): string {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(value));
+  } catch {
+    return "";
+  }
+}
+
+function HistoryReviewCard({
+  attempt,
+  onClear
+}: {
+  attempt: Attempt;
+  onClear: () => void;
+}) {
+  return (
+    <section className="panel history-review" aria-live="polite">
+      <div className="history-review-head">
+        <div>
+          <span className="history-review-kicker">回看这一题</span>
+          <h2>{attempt.scenarioPromptZh}</h2>
+          <div className="history-review-meta">
+            <span>{getDifficultyLabel(attempt.difficulty)}</span>
+            <span>{getTopicLabel(attempt.topic)}</span>
+            <span>{formatAttemptTime(attempt.createdAt)}</span>
+          </div>
+        </div>
+
+        <button className="icon-button" type="button" onClick={onClear} aria-label="关闭回看">
+          <X size={18} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="history-review-grid">
+        <div className="history-review-block">
+          <span>你的回答</span>
+          <p>{attempt.userAnswer}</p>
+        </div>
+
+        <div className="history-review-block history-review-block--accent">
+          <span>更自然的说法</span>
+          <p>
+            <VocabText text={attempt.result.betterAnswer} example={attempt.result.betterAnswer} />
+          </p>
+        </div>
+      </div>
+
+      <div className="history-review-grid">
+        <div className="history-review-block">
+          <span>AI 反馈</span>
+          <p>{attempt.result.feedbackZh}</p>
+        </div>
+
+        <div className="history-review-block">
+          <span>为什么更自然</span>
+          <p>{attempt.result.whyBetterZh}</p>
+        </div>
+      </div>
+
+      {attempt.result.keyPhrases.length > 0 ? (
+        <div className="history-review-block history-review-block--full">
+          <span>关键口语块</span>
+          <div className="word-hints history-review-tags">
+            {attempt.result.keyPhrases.map((phrase) => (
+              <span key={phrase}>{phrase}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {attempt.result.alternatives.length > 0 ? (
+        <div className="history-review-block history-review-block--full">
+          <span>其他说法</span>
+          <ul className="history-review-list">
+            {attempt.result.alternatives.map((alternative) => (
+              <li key={alternative}>
+                <VocabText text={alternative} example={alternative} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function normalizePrompt(value: string): string {

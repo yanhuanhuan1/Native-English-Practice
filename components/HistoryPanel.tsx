@@ -18,7 +18,7 @@ export function HistoryPanel({ attempts, onSelect }: HistoryPanelProps) {
         <div className="empty-state">还没有练习记录。</div>
       ) : (
         <div className="history-list">
-          {attempts.slice(0, 12).map((attempt) => (
+          {attempts.slice(-12).reverse().map((attempt) => (
             <button
               className="history-item"
               key={attempt.id}
