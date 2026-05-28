@@ -36,6 +36,11 @@ interface ServerConfigResponse {
 
 const ANALYZE_EVERY = 10;
 const BIG_SUMMARY_AT = 100;
+const SCREEN_TRANSITION_OUT_MS = 150;
+const SCREEN_TRANSITION_IN_DELAY_MS = 40;
+const SCREEN_TRANSITION_IN_MS = 170;
+const SCREEN_TRANSITION_TOTAL_MS =
+  SCREEN_TRANSITION_OUT_MS + SCREEN_TRANSITION_IN_DELAY_MS + SCREEN_TRANSITION_IN_MS;
 
 const scoreLabels: Array<{ key: keyof ScoreResult; label: string }> = [
   { key: "meaningAccuracy", label: "意思准确" },
@@ -51,6 +56,10 @@ interface PracticeAppProps {
 
 export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   const [screen, setScreen] = useState<AppScreen>("setup");
+  const [transition, setTransition] = useState<{
+    from: AppScreen;
+    to: AppScreen;
+  } | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>("beginner");
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [answer, setAnswer] = useState("");
@@ -71,6 +80,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     () => loadGeneratedScenarios()
   );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const transitionTimerRefs = useRef<number[]>([]);
 
   useEffect(() => {
     setInsight(loadInsight());
@@ -105,10 +115,23 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   }, [answer, screen]);
 
   useEffect(() => {
+    return () => {
+      for (const timerId of transitionTimerRefs.current) {
+        window.clearTimeout(timerId);
+      }
+      transitionTimerRefs.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
     saveGeneratedScenarios(recentGeneratedScenarios);
   }, [recentGeneratedScenarios]);
 
   async function handleGenerateScenario(difficulty = selectedDifficulty) {
+    if (transition) {
+      return;
+    }
+
     if (aiConfigured === false) {
       setError("AI 服务尚未配置，请先在 Vercel 环境变量里设置 API_KEY。");
       return;
@@ -143,7 +166,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
       rememberGeneratedScenario(payload.scenario);
       setScenario(payload.scenario);
-      setScreen("practice");
+      transitionTo("practice");
     } catch (generateError) {
       setError(generateError instanceof Error ? generateError.message : "生成失败，请稍后再试。");
     } finally {
@@ -152,7 +175,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   }
 
   async function prefetchNextScenario(difficulty = selectedDifficulty) {
-    if (aiConfigured === false || isPrefetching) {
+    if (transition || aiConfigured === false || isPrefetching) {
       return;
     }
 
@@ -181,7 +204,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   }
 
   async function triggerAnalysisIfNeeded(nextInsight: InsightState, allAttempts: Attempt[]) {
-    if (aiConfigured === false) {
+    if (transition || aiConfigured === false) {
       return;
     }
 
@@ -225,7 +248,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   }
 
   async function handleSubmit() {
-    if (!scenario || !answer.trim()) {
+    if (transition || !scenario || !answer.trim()) {
       return;
     }
 
@@ -257,7 +280,6 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
       const scoreResult = payload.result;
       setResult(scoreResult);
       setSubmittedAnswer(trimmedAnswer);
-      setScreen("result");
       setCachedScenario(null);
       rememberGeneratedScenario(scenario);
 
@@ -281,6 +303,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
       void prefetchNextScenario(scenario.difficulty);
       void triggerAnalysisIfNeeded(nextInsight, allAttempts);
+      transitionTo("result");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "评分失败，请稍后重试。");
     } finally {
@@ -289,25 +312,35 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   }
 
   function resetToSetup() {
-    setScreen("setup");
-    setScenario(null);
-    setAnswer("");
-    setSubmittedAnswer("");
-    setResult(null);
-    setError(null);
-    setCachedScenario(null);
+    if (transition) {
+      return;
+    }
+
+    transitionTo("setup", () => {
+      setScenario(null);
+      setAnswer("");
+      setSubmittedAnswer("");
+      setResult(null);
+      setError(null);
+      setCachedScenario(null);
+    });
   }
 
   function handleNextCachedScenario() {
+    if (transition) {
+      return;
+    }
+
     if (cachedScenario) {
       setScenario(cachedScenario);
       setSelectedDifficulty(cachedScenario.difficulty);
       setCachedScenario(null);
       setAnswer("");
-      setSubmittedAnswer("");
-      setResult(null);
-      setError(null);
-      setScreen("practice");
+      transitionTo("practice", () => {
+        setSubmittedAnswer("");
+        setResult(null);
+        setError(null);
+      });
       return;
     }
 
@@ -347,6 +380,29 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
     target.style.height = "auto";
     target.style.height = `${Math.max(target.scrollHeight, 112)}px`;
+  }
+
+  function transitionTo(nextScreen: AppScreen, afterTransition?: () => void) {
+    if (transition || screen === nextScreen) {
+      return;
+    }
+
+    for (const timerId of transitionTimerRefs.current) {
+      window.clearTimeout(timerId);
+    }
+    transitionTimerRefs.current = [];
+
+    setTransition({ from: screen, to: nextScreen });
+    const switchTimer = window.setTimeout(() => {
+      setScreen(nextScreen);
+    }, SCREEN_TRANSITION_OUT_MS);
+    const clearTimer = window.setTimeout(() => {
+      setTransition(null);
+      transitionTimerRefs.current = [];
+      afterTransition?.();
+    }, SCREEN_TRANSITION_TOTAL_MS);
+
+    transitionTimerRefs.current = [switchTimer, clearTimer];
   }
 
   function rememberGeneratedScenario(nextScenario: Scenario) {
@@ -394,6 +450,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
   const configNotice =
     aiConfigured === false ? "AI 服务尚未配置，请先在 Vercel 环境变量里设置 API_KEY。" : null;
+  const isTransitioning = transition !== null;
 
   return (
     <main className="minimal-app">
@@ -452,7 +509,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
           <div className="setup-actions">
             <button
               className="start-button"
-              disabled={isGenerating || aiConfigured === false}
+              disabled={isGenerating || isTransitioning || aiConfigured === false}
               onClick={() => handleGenerateScenario(selectedDifficulty)}
               type="button"
             >
@@ -474,7 +531,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
       {screen === "practice" && scenario ? (
         <section className="practice-screen">
-          <button className="plain-back" onClick={resetToSetup} type="button">
+          <button className="plain-back" onClick={resetToSetup} type="button" disabled={isTransitioning}>
             <ArrowLeft size={16} aria-hidden="true" />
             换难度
           </button>
@@ -530,7 +587,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
               <span className="shortcut-hint">Enter 提交 · Ctrl + 空格 换行</span>
               <button
                 className="start-button"
-                disabled={isScoring || !answer.trim()}
+                disabled={isScoring || isTransitioning || !answer.trim()}
                 type="submit"
               >
                 提交
@@ -611,13 +668,23 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
           </div>
 
           <div className="result-actions">
-            <button className="secondary-button" onClick={resetToSetup} type="button">
+            <button
+              className="secondary-button"
+              onClick={resetToSetup}
+              type="button"
+              disabled={isTransitioning}
+            >
               <ArrowLeft size={16} aria-hidden="true" />
               换难度
             </button>
             <button
               className="start-button"
-              disabled={isGenerating || isPrefetching || (aiConfigured === false && !cachedScenario)}
+              disabled={
+                isGenerating ||
+                isPrefetching ||
+                isTransitioning ||
+                (aiConfigured === false && !cachedScenario)
+              }
               onClick={handleNextCachedScenario}
               type="button"
             >
@@ -635,6 +702,15 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
           insight={insight}
           isAnalyzing={isAnalyzing}
           onClose={() => setIsInsightOpen(false)}
+        />
+      ) : null}
+
+      {transition ? (
+        <div
+          aria-hidden="true"
+          className="screen-transition-overlay"
+          data-from={transition.from}
+          data-to={transition.to}
         />
       ) : null}
     </main>

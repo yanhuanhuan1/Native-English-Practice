@@ -312,6 +312,7 @@ textarea:disabled {
 
 .vocab-word {
   position: relative;
+  z-index: 1;
   border-radius: 5px;
   padding: 0 2px;
   outline: none;
@@ -339,7 +340,7 @@ textarea:disabled {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 9px);
-  z-index: 30;
+  z-index: 100;
   display: none;
   width: min(300px, 80vw);
   transform: translateX(-50%);
@@ -464,13 +465,16 @@ textarea:disabled {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1px;
+  position: relative;
+  z-index: 2;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--border);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .result-compare-col {
+  position: relative;
   display: grid;
   gap: 12px;
   padding: 20px;
@@ -478,8 +482,16 @@ textarea:disabled {
   align-content: start;
 }
 
+.result-compare-col:first-child {
+  border-top-left-radius: calc(var(--radius) - 1px);
+  border-bottom-left-radius: calc(var(--radius) - 1px);
+}
+
 .result-compare-col--better {
   background: var(--surface-raised);
+  z-index: 3;
+  border-top-right-radius: calc(var(--radius) - 1px);
+  border-bottom-right-radius: calc(var(--radius) - 1px);
 }
 
 .result-col-label {
@@ -1210,6 +1222,42 @@ textarea:focus {
   gap: 8px;
 }
 
+.screen-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: auto;
+  background: rgba(4, 7, 12, 0.92);
+  backdrop-filter: blur(4px) saturate(0.82);
+  animation: screen-transition-fade 360ms ease-in-out both;
+  cursor: progress;
+}
+
+@keyframes screen-transition-fade {
+  0% {
+    opacity: 0;
+  }
+  32% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+  68% {
+    opacity: 0.82;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-transition-overlay {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* spinner */
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -1465,6 +1513,14 @@ textarea:focus {
   .result-compare,
   .result-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .result-compare-col:first-child {
+    border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  }
+
+  .result-compare-col--better {
+    border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
   }
 
   .result-header {
