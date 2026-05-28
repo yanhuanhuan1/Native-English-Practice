@@ -57,31 +57,13 @@ export function getProviderPreset(providerId?: string): AiProviderPreset {
 }
 
 export function inferProviderIdFromBaseUrl(baseUrl?: string): string | null {
-  if (!baseUrl) {
-    return null;
-  }
-
-  let hostname = "";
-
+  if (!baseUrl) return null;
   try {
-    hostname = new URL(baseUrl).hostname.toLowerCase();
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    if (hostname.includes("deepseek.com")) return "deepseek";
   } catch {
     return null;
   }
-
-  if (hostname.includes("dashscope.aliyuncs.com")) return "qwen";
-  if (hostname.includes("open.bigmodel.cn")) return "zhipu";
-  if (hostname.includes("generativelanguage.googleapis.com")) return "gemini";
-  if (hostname.includes("anthropic.com")) return "claude";
-  if (hostname.includes("deepseek.com")) return "deepseek";
-  if (hostname.includes("api.openai.com")) return "openai";
-  if (hostname.includes("openrouter.ai")) return "openrouter";
-  if (hostname.includes("siliconflow")) return "siliconflow";
-  if (hostname.includes("volces.com")) return "volcengine";
-  if (hostname.includes("modelscope.cn")) return "modelscope";
-  if (hostname.includes("together.xyz")) return "together";
-  if (hostname.includes("groq.com")) return "groq";
-
   return null;
 }
 

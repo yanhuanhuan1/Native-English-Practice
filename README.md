@@ -79,23 +79,8 @@ http://127.0.0.1:3000
 
 ## API Key 设置
 
-打开右上角 **设置**，选择 AI 服务商或第三方平台预设，然后填写对应 API Key。
+使用 DeepSeek API，在右上角设置里填写 API Key，或在服务端配置 `API_KEY` 环境变量。
 
-当前内置预设：
-
-- 千问 / 阿里云百炼：默认选项，OpenAI 兼容协议。
-- 智谱 AI / GLM：OpenAI 兼容协议。
-- Gemini / Google AI：OpenAI 兼容协议。
-- Claude / Anthropic：Anthropic Messages API 原生协议。
-- DeepSeek：OpenAI 兼容协议。
-- OpenAI：OpenAI 官方 API。
-- OpenRouter：第三方聚合平台。
-- 硅基流动 SiliconFlow：第三方 OpenAI 兼容平台。
-- 火山方舟：第三方 OpenAI 兼容平台。
-- 魔搭 ModelScope：第三方 OpenAI 兼容平台。
-- Together AI：第三方 OpenAI 兼容平台。
-- Groq：第三方 OpenAI 兼容平台。
-- 自定义 OpenAI 兼容：可接其他代理、聚合平台、本地服务。
 
 ## 自动识别实际请求地址
 
