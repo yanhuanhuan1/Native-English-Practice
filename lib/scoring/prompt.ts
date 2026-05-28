@@ -92,7 +92,9 @@ export function buildEvaluatorMessages(
 
 export function buildScenarioGeneratorMessages(
   topic?: Topic,
-  difficulty?: Difficulty
+  difficulty?: Difficulty,
+  recentPromptZh: string[] = [],
+  sceneFamily?: string
 ): ChatMessage[] {
   return [
     {
@@ -102,6 +104,9 @@ export function buildScenarioGeneratorMessages(
         "The goal is local, casual, human English, not textbook English and not written English.",
         "The scenario prompt must be in Simplified Chinese and should make the user produce one natural sentence or short spoken reply.",
         "Make it feel like an actual text message, hallway chat, dinner table reaction, office aside, awkward moment, complaint, joke, apology, or emotional response.",
+        "The sceneFamily hint is only a steering signal, not a template to copy.",
+        "Do not repeat or lightly paraphrase any prompt listed in recentPromptZh.",
+        "If the recent prompts are common beginner scenes, still choose a fresh situation, relationship, or emotional angle.",
         "Avoid exams, formal writing, business letters, grammar drills, and polite textbook dialogs.",
         "Return only strict JSON. Do not include markdown, comments, code fences, or extra text.",
         "The JSON shape is: {\"promptZh\": string, \"speaker\": string, \"listener\": string, \"relationship\": string, \"mood\": string, \"situation\": string, \"topic\": string, \"difficulty\": string, \"intent\": string, \"referenceAnswers\": string[], \"wordHints\": string[]}.",
@@ -117,6 +122,8 @@ export function buildScenarioGeneratorMessages(
         task: "Create one new natural spoken-English practice scenario.",
         requestedTopic: topic ?? "any casual real-life topic",
         requestedDifficulty: difficulty ?? "any",
+        sceneFamily: sceneFamily ?? "any fresh everyday scene",
+        recentPromptZh: recentPromptZh.slice(0, 8),
         mustFeelLike: [
           "real person talking",
           "local everyday English",

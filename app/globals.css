@@ -65,10 +65,10 @@ textarea:disabled {
 
 .minimal-app {
   display: grid;
-  width: min(1100px, 100%);
+  width: min(1440px, 100%);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 32px;
 }
 
 .minimal-topbar {
@@ -114,6 +114,10 @@ textarea:disabled {
   gap: 28px;
   min-height: calc(100vh - 100px);
   text-align: center;
+}
+
+.practice-screen {
+  width: 100%;
 }
 
 .setup-hero {
@@ -267,14 +271,15 @@ textarea:disabled {
 .one-line-practice {
   display: grid;
   gap: 12px;
+  width: min(100%, 1280px);
 }
 
 .one-line-practice textarea {
-  min-height: 210px;
+  min-height: 112px;
   border-color: var(--border-strong);
   background: #0b1017;
-  font-size: 22px;
-  line-height: 1.5;
+  font-size: 20px;
+  line-height: 1.45;
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: pre-wrap;

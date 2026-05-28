@@ -3,7 +3,13 @@
 import { ArrowLeft, BarChart2, RotateCcw, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { VocabText } from "@/components/VocabText";
-import { appendAttempt, loadInsight, saveInsight } from "@/lib/storage";
+import {
+  appendAttempt,
+  loadGeneratedScenarios,
+  loadInsight,
+  saveGeneratedScenarios,
+  saveInsight
+} from "@/lib/storage";
 import { DIFFICULTY_OPTIONS, type Difficulty, type Scenario } from "@/types/scenario";
 import type { Attempt, InsightReport, InsightState, ScoreResult } from "@/types/scoring";
 
@@ -61,6 +67,9 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(
     typeof initialAiConfigured === "boolean" ? initialAiConfigured : null
   );
+  const [recentGeneratedScenarios, setRecentGeneratedScenarios] = useState<Scenario[]>(
+    () => loadGeneratedScenarios()
+  );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -95,6 +104,10 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     resizeTextarea();
   }, [answer, screen]);
 
+  useEffect(() => {
+    saveGeneratedScenarios(recentGeneratedScenarios);
+  }, [recentGeneratedScenarios]);
+
   async function handleGenerateScenario(difficulty = selectedDifficulty) {
     if (aiConfigured === false) {
       setError("AI 服务尚未配置，请先在 Vercel 环境变量里设置 API_KEY。");
@@ -109,10 +122,14 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     setSubmittedAnswer("");
 
     try {
+      const recentPromptZh = buildRecentPromptList([
+        scenario?.promptZh,
+        cachedScenario?.promptZh
+      ]);
       const response = await fetch("/api/generate-scenario", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: "all", difficulty })
+        body: JSON.stringify({ topic: "all", difficulty, recentPromptZh })
       });
       const payload = (await response.json().catch(() => ({}))) as
         | GenerateScenarioApiResponse
@@ -124,6 +141,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
         );
       }
 
+      rememberGeneratedScenario(payload.scenario);
       setScenario(payload.scenario);
       setScreen("practice");
     } catch (generateError) {
@@ -140,16 +158,21 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
     setIsPrefetching(true);
     try {
+      const recentPromptZh = buildRecentPromptList([
+        scenario?.promptZh,
+        cachedScenario?.promptZh
+      ]);
       const response = await fetch("/api/generate-scenario", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: "all", difficulty })
+        body: JSON.stringify({ topic: "all", difficulty, recentPromptZh })
       });
       const payload = (await response.json().catch(() => ({}))) as
         | GenerateScenarioApiResponse
         | Record<string, never>;
 
       if (response.ok && "scenario" in payload && payload.scenario) {
+        rememberGeneratedScenario(payload.scenario);
         setCachedScenario(payload.scenario);
       }
     } finally {
@@ -236,6 +259,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
       setSubmittedAnswer(trimmedAnswer);
       setScreen("result");
       setCachedScenario(null);
+      rememberGeneratedScenario(scenario);
 
       const attempt: Attempt = {
         id: crypto.randomUUID(),
@@ -322,7 +346,50 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
     }
 
     target.style.height = "auto";
-    target.style.height = `${Math.max(target.scrollHeight, 210)}px`;
+    target.style.height = `${Math.max(target.scrollHeight, 112)}px`;
+  }
+
+  function rememberGeneratedScenario(nextScenario: Scenario) {
+    setRecentGeneratedScenarios((current) => {
+      const next = [
+        nextScenario,
+        ...current.filter(
+          (item) =>
+            item.id !== nextScenario.id &&
+            normalizePrompt(item.promptZh) !== normalizePrompt(nextScenario.promptZh)
+        )
+      ];
+
+      return next.slice(0, 12);
+    });
+  }
+
+  function buildRecentPromptList(extraPrompts: Array<string | undefined | null> = []) {
+    const prompts = [
+      scenario?.promptZh,
+      cachedScenario?.promptZh,
+      ...recentGeneratedScenarios.map((item) => item.promptZh),
+      ...extraPrompts
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const prompt of prompts) {
+      const normalized = normalizePrompt(prompt);
+      if (seen.has(normalized)) {
+        continue;
+      }
+
+      seen.add(normalized);
+      result.push(prompt);
+
+      if (result.length >= 8) {
+        break;
+      }
+    }
+
+    return result;
   }
 
   const configNotice =
@@ -447,7 +514,7 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
               onChange={(event) => setAnswer(event.target.value)}
               placeholder="直接用英文回一句，像平时真的在说话一样。"
               ref={textareaRef}
-              rows={6}
+              rows={4}
               spellCheck={false}
               value={answer}
             />
@@ -690,4 +757,10 @@ function getDifficultyHint(value: Difficulty): string {
     case "advanced":
       return "更本土、更自然，也更像真人会说的话";
   }
+}
+
+function normalizePrompt(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s\u3000，。！？、,.!?;；:：'"“”‘’（）()[\]{}<>《》【】\-_]/g, "");
 }

@@ -22,6 +22,9 @@ interface RequestChatCompletionArgs {
   provider: AiProviderPreset;
   messages: ChatMessage[];
   temperature?: number;
+  topP?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
   jsonMode?: boolean;
 }
 
@@ -42,6 +45,9 @@ async function requestOpenAiCompatibleChat({
   provider,
   messages,
   temperature = 0.2,
+  topP,
+  presencePenalty,
+  frequencyPenalty,
   jsonMode = true
 }: RequestChatCompletionArgs): Promise<string> {
   const controller = new AbortController();
@@ -63,6 +69,13 @@ async function requestOpenAiCompatibleChat({
           model,
           messages,
           temperature,
+          ...(typeof topP === "number" ? { top_p: topP } : {}),
+          ...(typeof presencePenalty === "number"
+            ? { presence_penalty: presencePenalty }
+            : {}),
+          ...(typeof frequencyPenalty === "number"
+            ? { frequency_penalty: frequencyPenalty }
+            : {}),
           ...(jsonMode && provider.supportsJsonMode
             ? { response_format: { type: "json_object" } }
             : {})
