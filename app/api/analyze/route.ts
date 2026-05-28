@@ -1,29 +1,30 @@
 import { NextResponse } from "next/server";
 import { requestChatCompletion } from "@/lib/ai/client";
-import { coerceApiSettings, getProviderPreset } from "@/lib/ai/config";
+import { getProviderPreset } from "@/lib/ai/config";
 import { buildInsightMessages } from "@/lib/scoring/prompt";
 import type { Attempt, InsightReport } from "@/types/scoring";
-import type { ApiSettings } from "@/types/settings";
 
 interface AnalyzeRequestBody {
   attempts: Attempt[];
   previousReports: InsightReport[];
-  settings?: Partial<ApiSettings>;
 }
 
-function resolveSettings(clientSettings?: Partial<ApiSettings>): ApiSettings {
-  const serverKey = process.env.API_KEY?.trim();
-  if (serverKey) {
-    const providerId = process.env.API_PROVIDER_ID?.trim() ?? "deepseek";
-    const preset = getProviderPreset(providerId);
-    return {
-      apiKey: serverKey,
-      providerId: preset.id,
-      baseUrl: process.env.API_BASE_URL?.trim() || preset.baseUrl,
-      model: process.env.API_MODEL?.trim() || preset.model
-    };
+function resolveServerSettings() {
+  const apiKey = process.env.API_KEY?.trim();
+
+  if (!apiKey) {
+    return null;
   }
-  return coerceApiSettings(clientSettings);
+
+  const providerId = process.env.API_PROVIDER_ID?.trim() ?? "deepseek";
+  const preset = getProviderPreset(providerId);
+
+  return {
+    apiKey,
+    provider: preset,
+    baseUrl: process.env.API_BASE_URL?.trim() || preset.baseUrl,
+    model: process.env.API_MODEL?.trim() || preset.model
+  };
 }
 
 export async function POST(request: Request) {
@@ -34,12 +35,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请求格式不正确。" }, { status: 400 });
   }
 
-  const settings = resolveSettings(body.settings);
-  const provider = getProviderPreset(settings.providerId);
+  const settings = resolveServerSettings();
 
-  if (!settings.apiKey) {
-    return NextResponse.json({ error: `请先在设置里填写 ${provider.apiKeyLabel}。` }, { status: 401 });
+  if (!settings) {
+    return NextResponse.json(
+      { error: "AI 服务尚未配置，请先在 Vercel 环境变量中设置 API_KEY。" },
+      { status: 503 }
+    );
   }
+
   if (!body.attempts?.length) {
     return NextResponse.json({ error: "没有可分析的练习记录。" }, { status: 400 });
   }
@@ -49,7 +53,7 @@ export async function POST(request: Request) {
       apiKey: settings.apiKey,
       baseUrl: settings.baseUrl,
       model: settings.model,
-      provider,
+      provider: settings.provider,
       messages: buildInsightMessages(body.attempts, body.previousReports ?? []),
       temperature: 0.3,
       jsonMode: true
@@ -74,7 +78,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ report });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? `分析失败：${error.message}` : "分析失败，请稍后重试。" },
+      {
+        error:
+          error instanceof Error ? `分析失败：${error.message}` : "分析失败，请稍后重试。"
+      },
       { status: 502 }
     );
   }

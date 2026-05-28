@@ -1,23 +1,10 @@
-import { coerceApiSettings, DEFAULT_API_SETTINGS } from "@/lib/ai/config";
 import type { Scenario } from "@/types/scenario";
 import type { Attempt, InsightState } from "@/types/scoring";
-import type { ApiSettings } from "@/types/settings";
 
-const settingsKey = "spoken-coach-settings";
 const historyKey = "spoken-coach-history";
 const generatedScenariosKey = "spoken-coach-generated-scenarios";
 const attemptsKey = "spoken-coach-attempts";
 const insightKey = "spoken-coach-insight";
-
-export function loadSettings(): ApiSettings {
-  return coerceApiSettings(
-    readJson<Partial<ApiSettings>>(settingsKey, DEFAULT_API_SETTINGS)
-  );
-}
-
-export function saveSettings(settings: ApiSettings): void {
-  writeJson(settingsKey, coerceApiSettings(settings));
-}
 
 export function loadHistory(): Attempt[] {
   return readJson<Attempt[]>(historyKey, []);

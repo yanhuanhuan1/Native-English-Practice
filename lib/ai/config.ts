@@ -1,10 +1,8 @@
-import type { AiProviderProtocol, ApiSettings } from "@/types/settings";
-
 export interface AiProviderPreset {
   id: string;
   label: string;
   shortLabel: string;
-  protocol: AiProviderProtocol;
+  protocol: "openai-compatible" | "anthropic";
   baseUrl: string;
   endpointPath: string;
   model: string;
@@ -33,17 +31,6 @@ export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
   }
 ];
 
-export const DEFAULT_PROVIDER = getProviderPreset(
-  AI_PROVIDER_CONFIG.defaultProviderId
-);
-
-export const DEFAULT_API_SETTINGS: ApiSettings = {
-  apiKey: "",
-  providerId: DEFAULT_PROVIDER.id,
-  baseUrl: DEFAULT_PROVIDER.baseUrl,
-  model: DEFAULT_PROVIDER.model
-};
-
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -54,64 +41,6 @@ export function getProviderPreset(providerId?: string): AiProviderPreset {
     AI_PROVIDER_PRESETS.find((provider) => provider.id === providerId) ??
     AI_PROVIDER_PRESETS[0]
   );
-}
-
-export function inferProviderIdFromBaseUrl(baseUrl?: string): string | null {
-  if (!baseUrl) return null;
-  try {
-    const hostname = new URL(baseUrl).hostname.toLowerCase();
-    if (hostname.includes("deepseek.com")) return "deepseek";
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-export function resolveProviderForSettings(
-  settings?: Partial<ApiSettings>
-): AiProviderPreset {
-  if (
-    settings?.providerId &&
-    settings.providerId !== "custom-openai" &&
-    AI_PROVIDER_PRESETS.some((provider) => provider.id === settings.providerId)
-  ) {
-    return getProviderPreset(settings.providerId);
-  }
-
-  return getProviderPreset(
-    inferProviderIdFromBaseUrl(settings?.baseUrl) ?? settings?.providerId
-  );
-}
-
-export function createSettingsForProvider(
-  providerId: string,
-  apiKey = ""
-): ApiSettings {
-  const provider = getProviderPreset(providerId);
-
-  return {
-    apiKey,
-    providerId: provider.id,
-    baseUrl: provider.baseUrl,
-    model: provider.model
-  };
-}
-
-export function coerceApiSettings(settings?: Partial<ApiSettings>): ApiSettings {
-  const provider = resolveProviderForSettings(settings);
-
-  return {
-    apiKey: typeof settings?.apiKey === "string" ? settings.apiKey : "",
-    providerId: provider.id,
-    baseUrl:
-      typeof settings?.baseUrl === "string" && settings.baseUrl.trim()
-        ? settings.baseUrl
-        : provider.baseUrl,
-    model:
-      typeof settings?.model === "string" && settings.model.trim()
-        ? settings.model
-        : provider.model
-  };
 }
 
 export function normalizeBaseUrl(baseUrl: string, providerId?: string): string {
