@@ -416,6 +416,15 @@ function ListeningStep({
     <StepPanel eyebrow="Step 1" title="Listening Input" actionLabel="我听完了，进入表达库" onAction={onDone}>
       <div className="daily-training-player-layout">
         <div className="daily-training-player">
+          {resource.playerType === "bilibili" && resource.embedUrl ? (
+            <iframe
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+              scrolling="no"
+              src={resource.embedUrl}
+              title={resource.title}
+            />
+          ) : null}
           {resource.playerType === "youtube" && resource.embedUrl ? (
             <iframe
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

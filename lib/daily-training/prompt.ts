@@ -31,11 +31,13 @@ export function buildDailyTrainingMessages({
         "",
         "Resource rules:",
         "- Use web search or browsing if your connected agent API supports it.",
-        "- Prefer real resources from BBC Learning English, British Council LearnEnglish, VOA Learning English, TED-Ed, and high-quality YouTube channels.",
-        "- Listening must be playable inside the site when possible: provide YouTube embedUrl or a direct audioUrl. If neither is available, use playerType web and provide the source URL plus a short transcript/summary.",
+        "- Core listening source priority for this China-facing product: Bilibili embeddable videos first, then direct audio pages, then BBC/British Council/VOA web pages, and YouTube only as a last overseas fallback.",
+        "- Prefer Bilibili videos related to BBC Learning English, TED, TED-Ed, VOA Learning English, daily English listening, and workplace spoken English.",
+        "- Listening must be playable inside the site when possible: for Bilibili provide a normal video URL plus player.bilibili.com embedUrl; for direct audio provide audioUrl. If neither is available, use playerType web and provide the source URL plus a short transcript/summary.",
         "- Before choosing a listening video, verify the original page is not 404, not moved, not private, and not region/embedding restricted.",
         "- Do not use old BBC Chinese paths such as /learningenglish/chinese/features/... unless you have verified the exact page still exists.",
-        "- For YouTube, only use public videos that can be embedded; provide both the watch URL and the /embed/ URL.",
+        "- For Bilibili, only use public videos with a valid BV id. The embedUrl must look like https://player.bilibili.com/player.html?bvid=BV...&page=1&autoplay=0.",
+        "- For YouTube, only use public videos that can be embedded; provide both the watch URL and the /embed/ URL. Avoid YouTube unless no Bilibili/direct-audio option fits.",
         "- Reading must be a Daily Reading Card of 100-200 words based on or adapted from a real linked source. Do not paste a copyrighted full article.",
         "- Vocabulary must come from the selected listening/reading theme and be written as reusable expression chunks.",
         "- Provide all resource links and difficulty judgments.",
@@ -79,7 +81,7 @@ export function buildDailyTrainingMessages({
       "audioUrl": string,
       "level": string,
       "duration": string,
-      "playerType": "youtube" | "audio" | "web",
+      "playerType": "bilibili" | "youtube" | "audio" | "web",
       "whySuitable": string
     },
     "firstListen": {
@@ -189,6 +191,7 @@ export function buildDailyTrainingMessages({
         "- For the first 14 days, do not include writing tasks at all.",
         "- All URLs must be valid http(s) URLs.",
         "- Listening resource must be currently valid and playable. Do not return dead pages, moved pages, pages showing 404/not found, private videos, or non-embeddable videos.",
+        "- Prefer playerType bilibili for the listening resource. YouTube is not suitable for most China-based users.",
         "- If using YouTube, convert watch URLs to embed URLs."
       ].join("\n")
     }

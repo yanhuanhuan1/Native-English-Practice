@@ -11,7 +11,7 @@ export type TrainingStep =
 
 export type StepStatus = Record<TrainingStep, boolean>;
 
-export type ListeningPlayerType = "youtube" | "audio" | "web";
+export type ListeningPlayerType = "bilibili" | "youtube" | "audio" | "web";
 
 export type ExpressionMastery = "new" | "learning" | "mastered";
 

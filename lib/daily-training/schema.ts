@@ -43,7 +43,7 @@ const validSteps: TrainingStep[] = [
   "speaking",
   "review"
 ];
-const validPlayerTypes: ListeningPlayerType[] = ["youtube", "audio", "web"];
+const validPlayerTypes: ListeningPlayerType[] = ["bilibili", "youtube", "audio", "web"];
 const validMastery: ExpressionMastery[] = ["new", "learning", "mastered"];
 
 export function parseEnglishTrainingDay(rawContent: string): DailyTraining {
@@ -143,9 +143,14 @@ function parseListeningResource(data: Record<string, unknown>): ListeningResourc
   const url = httpUrl(data.url) ?? stringValue(fallback.url) ?? "https://learningenglish.voanews.com/";
   const playerType =
     enumValue(data.playerType, validPlayerTypes) ??
-    (extractYoutubeId(url) ? "youtube" : "web");
+    (extractBilibiliId(url) ? "bilibili" : extractYoutubeId(url) ? "youtube" : "web");
   const embedUrl =
-    httpUrl(data.embedUrl) ?? (playerType === "youtube" ? toYoutubeEmbedUrl(url) : undefined);
+    httpUrl(data.embedUrl) ??
+    (playerType === "bilibili"
+      ? toBilibiliEmbedUrl(url)
+      : playerType === "youtube"
+        ? toYoutubeEmbedUrl(url)
+        : undefined);
 
   return {
     title: stringValue(data.title) ?? "English listening practice",
@@ -688,6 +693,27 @@ function withFallback(values: string[], fallback: string[]): string[] {
 function toYoutubeEmbedUrl(url: string): string | undefined {
   const id = extractYoutubeId(url);
   return id ? `https://www.youtube.com/embed/${id}` : undefined;
+}
+
+function toBilibiliEmbedUrl(url: string): string | undefined {
+  const id = extractBilibiliId(url);
+  return id ? `https://player.bilibili.com/player.html?bvid=${id}&page=1&autoplay=0` : undefined;
+}
+
+function extractBilibiliId(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    const fromQuery = parsed.searchParams.get("bvid");
+
+    if (fromQuery?.startsWith("BV")) {
+      return fromQuery;
+    }
+
+    const match = parsed.pathname.match(/BV[a-zA-Z0-9]+/);
+    return match?.[0];
+  } catch {
+    return undefined;
+  }
 }
 
 function extractYoutubeId(url: string): string | undefined {
