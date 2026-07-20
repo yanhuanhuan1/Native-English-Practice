@@ -15,6 +15,89 @@ export type ListeningPlayerType = "bilibili" | "youtube" | "audio" | "web";
 
 export type ExpressionMastery = "new" | "learning" | "mastered";
 
+export type LearningItemType =
+  | "vocabulary"
+  | "expression"
+  | "pronunciation"
+  | "connectedSpeech";
+
+export type LearningItemMastery =
+  | "unknown"
+  | "fuzzy"
+  | "known-passive"
+  | "active";
+
+export interface TranscriptSegment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  speaker: string;
+  text: string;
+  translation?: string;
+  vocabularyIds: string[];
+  expressionIds: string[];
+  markedUnclear: boolean;
+  completed: boolean;
+}
+
+export interface LearningItem {
+  id: string;
+  type: LearningItemType;
+  text: string;
+  meaning: string;
+  pronunciation: string;
+  sourceSentence: string;
+  sourceStartTime: number;
+  collocations: string[];
+  reusableExample: string;
+  level: string;
+  saved: boolean;
+  mastery: LearningItemMastery;
+}
+
+export interface DictationExercise {
+  segmentId: string;
+  userAnswer: string;
+  correctText: string;
+  missingWords: string[];
+  incorrectWords: string[];
+  completed: boolean;
+  hint?: string;
+}
+
+export interface ComprehensionQuestion {
+  id: string;
+  type: "mainIdea" | "relationship" | "keyInfo" | "meaning";
+  question: string;
+  options: string[];
+  answer: string;
+  explanation: string;
+  userAnswer?: string;
+  completed: boolean;
+}
+
+export interface ShadowingTask {
+  segmentIds: string[];
+  recordings: Record<string, string>;
+  completed: boolean;
+}
+
+export interface OutputTask {
+  prompt: string;
+  requiredItemIds: string[];
+  recordingUrl?: string;
+  transcript?: string;
+  feedback?: string;
+  completed: boolean;
+}
+
+export interface LessonReviewSummary {
+  expressions: string[];
+  soundIssues: string[];
+  reviewSentence: string;
+  addedToReview: boolean;
+}
+
 export interface ListeningResource {
   title: string;
   source: string;
@@ -146,6 +229,14 @@ export interface DailyTraining {
   activeStep: TrainingStep;
   stepStatus: StepStatus;
   listening: ListeningTask;
+  transcriptSource: "official" | "auto" | "asr" | "unavailable";
+  transcriptSegments: TranscriptSegment[];
+  learningItems: LearningItem[];
+  dictation: DictationExercise[];
+  comprehension: ComprehensionQuestion[];
+  shadowing: ShadowingTask;
+  outputTask: OutputTask;
+  lessonReview: LessonReviewSummary;
   expressions: TrainingExpression[];
   practice: PracticeModule;
   speaking: SpeakingPractice;

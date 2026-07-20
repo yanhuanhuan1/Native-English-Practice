@@ -1,21 +1,26 @@
 import type {
+  ComprehensionQuestion,
   DailyTraining,
+  DictationExercise,
   ExpressionMastery,
-  FillBlankPractice,
+  LearningItem,
+  LearningItemMastery,
+  LearningItemType,
+  LessonReviewSummary,
   ListeningPlayerType,
   ListeningResource,
+  OutputTask,
   PracticeModule,
   ProgressDashboard,
   ReadingCard,
-  ReadingHighlight,
-  ReplacementPractice,
   ReviewItem,
-  SentenceBuilderPractice,
+  ShadowingTask,
   SpeakingFeedback,
   TrainingExpression,
   TrainingLevel,
   TrainingPhase,
   TrainingStep,
+  TranscriptSegment,
   WeaknessTracking
 } from "@/types/daily-training";
 
@@ -26,32 +31,33 @@ export class DailyTrainingParseError extends Error {
   }
 }
 
-const validLevels: TrainingLevel[] = [
-  "IELTS 5.0-6.0",
-  "IELTS 6.0-6.5",
-  "IELTS 7+"
-];
-const validPhases: TrainingPhase[] = [
-  "phase1-foundation",
-  "phase2-bridge",
-  "phase3-ielts7"
-];
-const validSteps: TrainingStep[] = [
-  "listening",
-  "expression",
-  "practice",
-  "speaking",
-  "review"
-];
+const validLevels: TrainingLevel[] = ["IELTS 5.0-6.0", "IELTS 6.0-6.5", "IELTS 7+"];
+const validPhases: TrainingPhase[] = ["phase1-foundation", "phase2-bridge", "phase3-ielts7"];
+const validSteps: TrainingStep[] = ["listening", "expression", "practice", "speaking", "review"];
 const validPlayerTypes: ListeningPlayerType[] = ["bilibili", "youtube", "audio", "web"];
 const validMastery: ExpressionMastery[] = ["new", "learning", "mastered"];
+const validLearningTypes: LearningItemType[] = [
+  "vocabulary",
+  "expression",
+  "pronunciation",
+  "connectedSpeech"
+];
+const validLearningMastery: LearningItemMastery[] = [
+  "unknown",
+  "fuzzy",
+  "known-passive",
+  "active"
+];
 
 export function parseEnglishTrainingDay(rawContent: string): DailyTraining {
   const data = parseStrictJsonObject(rawContent);
   const dayNumber = positiveInteger(data.dayNumber) ?? 1;
   const level = enumValue(data.level, validLevels) ?? "IELTS 5.0-6.0";
   const phase = enumValue(data.phase, validPhases) ?? inferPhase(dayNumber);
-  const expressions = normalizeExpressions(data);
+  const listening = parseListening(data);
+  const transcriptSegments = parseTranscriptSegments(data, listening.transcript);
+  const learningItems = normalizeLearningItems(data, transcriptSegments);
+  const expressions = normalizeExpressions(data, learningItems);
 
   return {
     date: dateString(data.date) ?? getTodayKey(),
@@ -61,12 +67,28 @@ export function parseEnglishTrainingDay(rawContent: string): DailyTraining {
     topic: stringValue(data.topic) ?? "Workplace Communication",
     activeStep: enumValue(data.activeStep, validSteps) ?? "listening",
     stepStatus: parseStepStatus(recordValue(data.stepStatus)),
-    listening: parseListening(data),
+    listening,
+    transcriptSource: transcriptSegments.length
+      ? enumValue(data.transcriptSource, ["official", "auto", "asr", "unavailable"] as const) ??
+        "auto"
+      : "unavailable",
+    transcriptSegments,
+    learningItems,
+    dictation: parseDictation(data, transcriptSegments),
+    comprehension: parseComprehension(data),
+    shadowing: parseShadowing(data, transcriptSegments),
+    outputTask: parseOutputTask(data, learningItems),
+    lessonReview: parseLessonReview(data, learningItems, transcriptSegments),
     expressions,
-    practice: parsePractice(recordValue(data.practice), expressions),
-    speaking: parseSpeaking(data),
-    reading: parseReadingCard(data, expressions),
-    review: parseReviewItems(data, expressions),
+    practice: parsePractice(transcriptSegments),
+    speaking: {
+      question:
+        stringValue(recordValue(data.outputTask)?.prompt) ??
+        stringValue(recordValue(data.speaking)?.question) ??
+        "Use three expressions from this lesson to introduce yourself."
+    },
+    reading: parseReadingCard(data, transcriptSegments, learningItems),
+    review: parseReviewItems(data, learningItems),
     weaknesses: parseWeaknesses(recordValue(data.weaknesses)),
     dashboard: parseDashboard(recordValue(data.dashboard)),
     completed: false
@@ -81,11 +103,11 @@ export function parseSpeakingFeedback(rawContent: string): SpeakingFeedback {
     grammar: scoreValue(data.grammar) ?? 70,
     vocabulary: scoreValue(data.vocabulary) ?? 70,
     naturalness: scoreValue(data.naturalness) ?? 70,
-    suggestion: stringValue(data.suggestion) ?? "表达基本清楚，下一步重点放在更自然、更口语的说法上。",
+    suggestion: stringValue(data.suggestion) ?? "表达基本清楚，继续练自然口语表达。",
     betterVersion:
       stringValue(data.betterVersion) ??
       stringValue(data.betterAnswer) ??
-      "I would say it in a simpler, more natural way."
+      "Try saying it in a simpler, more natural way."
   };
 }
 
@@ -101,7 +123,7 @@ function parseStrictJsonObject(rawContent: string): Record<string, unknown> {
         return data;
       }
     } catch {
-      // Try the next candidate before reporting malformed JSON.
+      // Try the next candidate.
     }
   }
 
@@ -111,28 +133,17 @@ function parseStrictJsonObject(rawContent: string): Record<string, unknown> {
 function parseListening(root: Record<string, unknown>): DailyTraining["listening"] {
   const data = recordValue(root.listening) ?? recordValue(root.listeningTask) ?? {};
   const resource =
-    recordValue(data.resource) ??
-    firstResource(root, "listening") ??
-    fallbackListeningResource();
-  const firstListen = recordValue(data.firstListen) ?? {};
-  const secondListen = recordValue(data.secondListen) ?? {};
+    recordValue(data.resource) ?? firstResource(root, "listening") ?? fallbackListeningResource();
 
   return {
     resource: parseListeningResource(resource),
     firstListen: {
-      instruction:
-        stringValue(firstListen.instruction) ?? "第一遍：不看字幕，只抓大意。",
-      questions: stringArray(firstListen.questions).slice(0, 5).length
-        ? stringArray(firstListen.questions).slice(0, 5)
-        : ["What is the topic?", "Who is speaking?", "What is the main idea?"]
+      instruction: "播放视频，先不看中文，跟随逐句文本精听。",
+      questions: ["What is happening?", "Who is speaking?", "Which expression can you reuse?"]
     },
     secondListen: {
-      instruction:
-        stringValue(secondListen.instruction) ?? "第二遍：打开英文字幕，抓表达块。",
-      task:
-        stringValue(secondListen.task) ??
-        stringValue(secondListen.extractionTarget) ??
-        "写下 5 个你能马上用到的表达。"
+      instruction: "用逐句转录定位没听清的地方。",
+      task: "完成本课 3-5 句精听和跟读。"
     },
     transcript: stringValue(data.transcript)
   };
@@ -140,302 +151,399 @@ function parseListening(root: Record<string, unknown>): DailyTraining["listening
 
 function parseListeningResource(data: Record<string, unknown>): ListeningResource {
   const fallback = fallbackListeningResource();
-  const url = httpUrl(data.url) ?? stringValue(fallback.url) ?? "https://learningenglish.voanews.com/";
+  const url =
+    httpUrl(data.url) ?? stringValue(fallback.url) ?? "https://search.bilibili.com/all?keyword=BBC%20Learning%20English";
   const playerType =
     enumValue(data.playerType, validPlayerTypes) ??
     (extractBilibiliId(url) ? "bilibili" : extractYoutubeId(url) ? "youtube" : "web");
-  const embedUrl =
-    httpUrl(data.embedUrl) ??
-    (playerType === "bilibili"
-      ? toBilibiliEmbedUrl(url)
-      : playerType === "youtube"
-        ? toYoutubeEmbedUrl(url)
-        : undefined);
 
   return {
     title: stringValue(data.title) ?? "English listening practice",
-    source:
-      stringValue(data.source) ??
-      stringValue(data.websiteName) ??
-      "VOA Learning English",
+    source: stringValue(data.source) ?? stringValue(data.websiteName) ?? "Bilibili",
     url,
-    embedUrl,
+    embedUrl:
+      httpUrl(data.embedUrl) ??
+      (playerType === "bilibili"
+        ? toBilibiliEmbedUrl(url)
+        : playerType === "youtube"
+          ? toYoutubeEmbedUrl(url)
+          : undefined),
     audioUrl: httpUrl(data.audioUrl),
-    level:
-      stringValue(data.level) ??
-      stringValue(data.difficulty) ??
-      "IELTS 5.0-6.0",
-    duration: stringValue(data.duration) ?? "5 分钟",
+    level: stringValue(data.level) ?? stringValue(data.difficulty) ?? "B1 / IELTS 5.0-5.5",
+    duration: stringValue(data.duration) ?? "5 minutes",
     playerType,
-    whySuitable:
-      stringValue(data.whySuitable) ??
-      "语速相对清楚，适合先建立真实听力输入和常用表达库存。"
+    whySuitable: stringValue(data.whySuitable) ?? "适合进行逐句精听和表达积累。"
   };
 }
 
-function normalizeExpressions(root: Record<string, unknown>): TrainingExpression[] {
-  const direct = arrayValue(root.expressions).map(parseExpression).filter(isNonNull);
-  const fromChunks = arrayValue(root.chunks).map(parseExpressionFromChunk).filter(isNonNull);
-  const fromVocabulary = arrayValue(root.vocabulary)
-    .map(parseExpressionFromVocabulary)
+function parseTranscriptSegments(
+  root: Record<string, unknown>,
+  transcript?: string
+): TranscriptSegment[] {
+  const segments = arrayValue(root.transcriptSegments)
+    .map(parseTranscriptSegment)
     .filter(isNonNull);
-  const merged = dedupeExpressions([...direct, ...fromChunks, ...fromVocabulary]);
 
-  return fillExpressions(merged).slice(0, 8);
+  if (segments.length) {
+    return segments.slice(0, 80);
+  }
+
+  const listening = recordValue(root.listening) ?? {};
+  const nested = arrayValue(listening.transcriptSegments)
+    .map(parseTranscriptSegment)
+    .filter(isNonNull);
+
+  if (nested.length) {
+    return nested.slice(0, 80);
+  }
+
+  if (!transcript) {
+    return [];
+  }
+
+  return transcript
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 40)
+    .map((text, index) => ({
+      id: `segment-${index + 1}`,
+      startTime: index * 8,
+      endTime: index * 8 + 7,
+      speaker: "Speaker",
+      text,
+      translation: undefined,
+      vocabularyIds: [],
+      expressionIds: [],
+      markedUnclear: false,
+      completed: false
+    }));
 }
 
-function parseExpression(value: unknown): TrainingExpression | null {
+function parseTranscriptSegment(value: unknown): TranscriptSegment | null {
   const data = recordValue(value);
+  const text = stringValue(data?.text);
 
-  if (!data) {
+  if (!text) {
     return null;
   }
 
-  const expression = stringValue(data.expression) ?? stringValue(data.text) ?? stringValue(data.word);
+  const startTime = numberValue(data?.startTime) ?? parseTimestamp(stringValue(data?.startTime)) ?? 0;
+  const endTime =
+    numberValue(data?.endTime) ?? parseTimestamp(stringValue(data?.endTime)) ?? startTime + 6;
+
+  return {
+    id: stringValue(data?.id) ?? `segment-${slugify(text).slice(0, 18)}`,
+    startTime,
+    endTime: Math.max(endTime, startTime + 1),
+    speaker: stringValue(data?.speaker) ?? "Speaker",
+    text,
+    translation: stringValue(data?.translation),
+    vocabularyIds: stringArray(data?.vocabularyIds),
+    expressionIds: stringArray(data?.expressionIds),
+    markedUnclear: booleanValue(data?.markedUnclear) ?? false,
+    completed: booleanValue(data?.completed) ?? false
+  };
+}
+
+function normalizeLearningItems(
+  root: Record<string, unknown>,
+  segments: TranscriptSegment[]
+): LearningItem[] {
+  const direct = arrayValue(root.learningItems).map(parseLearningItem).filter(isNonNull);
+  const fromExpressions = arrayValue(root.expressions).map((value) =>
+    parseLearningItemFromExpression(value, segments)
+  ).filter(isNonNull);
+  const merged = dedupeLearningItems([...direct, ...fromExpressions]);
+
+  if (merged.length) {
+    return merged.slice(0, 12);
+  }
+
+  return buildFallbackLearningItems(segments).slice(0, 8);
+}
+
+function parseLearningItem(value: unknown): LearningItem | null {
+  const data = recordValue(value);
+  const text = stringValue(data?.text) ?? stringValue(data?.expression) ?? stringValue(data?.word);
+
+  if (!text) {
+    return null;
+  }
+
+  return {
+    id: stringValue(data?.id) ?? slugify(text),
+    type: enumValue(data?.type, validLearningTypes) ?? "expression",
+    text,
+    meaning: stringValue(data?.meaning) ?? "可复用表达",
+    pronunciation: stringValue(data?.pronunciation) ?? "注意自然连读和重音。",
+    sourceSentence: stringValue(data?.sourceSentence) ?? stringValue(data?.example) ?? text,
+    sourceStartTime: numberValue(data?.sourceStartTime) ?? 0,
+    collocations: stringArray(data?.collocations).slice(0, 5),
+    reusableExample:
+      stringValue(data?.reusableExample) ??
+      stringValue(data?.example) ??
+      `I can use "${text}" in a real conversation.`,
+    level: stringValue(data?.level) ?? "B1",
+    saved: booleanValue(data?.saved) ?? false,
+    mastery: enumValue(data?.mastery, validLearningMastery) ?? "unknown"
+  };
+}
+
+function parseLearningItemFromExpression(
+  value: unknown,
+  segments: TranscriptSegment[]
+): LearningItem | null {
+  const data = recordValue(value);
+  const expression = stringValue(data?.expression) ?? stringValue(data?.text);
 
   if (!expression) {
     return null;
   }
 
+  const sourceSegment =
+    segments.find((segment) => segment.text.toLowerCase().includes(expression.toLowerCase())) ??
+    segments[0];
+
   return {
-    id: stringValue(data.id) ?? slugify(expression),
-    expression,
-    meaning: stringValue(data.meaning) ?? "常用口语表达",
-    example:
-      stringValue(data.example) ??
-      stringValue(data.exampleSentence) ??
-      `I can use "${expression}" in a real conversation.`,
-    scenario: stringValue(data.scenario) ?? "日常真实交流",
-    pronunciation: stringValue(data.pronunciation) ?? "按自然语流连读，不要逐词硬读。",
-    difficulty: stringValue(data.difficulty) ?? "基础高频",
-    favorite: booleanValue(data.favorite) ?? false,
-    reviewDate: dateString(data.reviewDate) ?? addDays(getTodayKey(), 1),
-    mastery: enumValue(data.mastery, validMastery) ?? "new"
+    id: stringValue(data?.id) ?? slugify(expression),
+    type: "expression",
+    text: expression,
+    meaning: stringValue(data?.meaning) ?? "可复用表达",
+    pronunciation: stringValue(data?.pronunciation) ?? "放进整句里读。",
+    sourceSentence: sourceSegment?.text ?? stringValue(data?.example) ?? expression,
+    sourceStartTime: sourceSegment?.startTime ?? 0,
+    collocations: [],
+    reusableExample:
+      stringValue(data?.reusableExample) ??
+      stringValue(data?.example) ??
+      `Try using "${expression}" in your own answer.`,
+    level: stringValue(data?.difficulty) ?? "B1",
+    saved: false,
+    mastery: "unknown"
   };
 }
 
-function parseExpressionFromChunk(value: unknown): TrainingExpression | null {
-  const data = recordValue(value);
+function parseDictation(
+  root: Record<string, unknown>,
+  segments: TranscriptSegment[]
+): DictationExercise[] {
+  const direct = arrayValue(root.dictation).map(parseDictationExercise).filter(isNonNull);
 
-  if (!data) {
-    return null;
+  if (direct.length) {
+    return direct.slice(0, 5);
   }
 
-  return parseExpression({
-    expression: data.expression,
-    meaning: data.meaning,
-    example: data.example,
-    scenario: "表达块迁移",
-    pronunciation: "注意弱读和连读。",
-    difficulty: "基础高频",
-    favorite: false,
-    reviewDate: addDays(getTodayKey(), 1),
-    mastery: "new"
-  });
+  return segments
+    .filter((segment) => segment.text.split(/\s+/).length >= 5)
+    .slice(0, 5)
+    .map((segment) => ({
+      segmentId: segment.id,
+      userAnswer: "",
+      correctText: segment.text,
+      missingWords: [],
+      incorrectWords: [],
+      completed: false,
+      hint: "先播放原句，再凭声音输入你听到的内容。"
+    }));
 }
 
-function parseExpressionFromVocabulary(value: unknown): TrainingExpression | null {
+function parseDictationExercise(value: unknown): DictationExercise | null {
   const data = recordValue(value);
+  const segmentId = stringValue(data?.segmentId);
+  const correctText = stringValue(data?.correctText);
 
-  if (!data) {
-    return null;
-  }
-
-  const collocation = stringArray(data.commonCollocations)[0];
-  const word = stringValue(data.word);
-
-  return parseExpression({
-    expression: collocation ?? word,
-    meaning: stringValue(data.meaning),
-    example: stringValue(data.exampleSentence),
-    scenario: "词汇转表达块",
-    pronunciation: "放进完整句子里练，不单独背。",
-    difficulty: "基础高频",
-    favorite: false,
-    reviewDate: addDays(getTodayKey(), 1),
-    mastery: "new"
-  });
-}
-
-function parsePractice(
-  data: Record<string, unknown> | undefined,
-  expressions: TrainingExpression[]
-): PracticeModule {
-  const fillBlank = arrayValue(data?.fillBlank).map(parseFillBlank).filter(isNonNull);
-  const replacements = arrayValue(data?.replacements).map(parseReplacement).filter(isNonNull);
-  const sentenceBuilders = arrayValue(data?.sentenceBuilders)
-    .map(parseSentenceBuilder)
-    .filter(isNonNull);
-  const firstExpression = expressions[0]?.expression ?? "be responsible for";
-  const secondExpression = expressions[1]?.expression ?? "follow up on";
-
-  return {
-    fillBlank: fillBlank.length >= 2
-      ? fillBlank.slice(0, 4)
-      : [
-          ...fillBlank,
-          {
-            id: "fill-responsible-for",
-            prompt: "I am responsible ___ keeping the team updated.",
-            answer: "for",
-            hint: "responsible 后面常接 for"
-          },
-          {
-            id: "fill-follow-up",
-            prompt: "I will follow ___ with you tomorrow.",
-            answer: "up",
-            hint: "follow up = 跟进"
-          }
-        ].slice(0, 2),
-    replacements: replacements.length
-      ? replacements.slice(0, 2)
-      : [
-          {
-            id: "replace-work-area",
-            baseSentence: `I use "${firstExpression}" at work.`,
-            targetWord: "work",
-            replacements: ["a meeting", "a quick call", "a team update"],
-            modelAnswer: `I use "${firstExpression}" in a meeting.`
-          }
-        ],
-    sentenceBuilders: sentenceBuilders.length
-      ? sentenceBuilders.slice(0, 3)
-      : [
-          {
-            id: "builder-expression",
-            keywords: secondExpression.split(/\s+/).slice(0, 5),
-            modelAnswer: `I need to ${secondExpression} after the meeting.`,
-            context: "用今天的表达说一句真实工作场景里的英文。"
-          }
-        ]
-  };
-}
-
-function parseFillBlank(value: unknown): FillBlankPractice | null {
-  const data = recordValue(value);
-  const prompt = stringValue(data?.prompt);
-  const answer = stringValue(data?.answer);
-
-  return prompt && answer
+  return segmentId && correctText
     ? {
-        id: stringValue(data?.id) ?? slugify(prompt),
-        prompt,
-        answer,
+        segmentId,
+        userAnswer: stringValue(data?.userAnswer) ?? "",
+        correctText,
+        missingWords: stringArray(data?.missingWords),
+        incorrectWords: stringArray(data?.incorrectWords),
+        completed: booleanValue(data?.completed) ?? false,
         hint: stringValue(data?.hint)
       }
     : null;
 }
 
-function parseReplacement(value: unknown): ReplacementPractice | null {
-  const data = recordValue(value);
-  const baseSentence = stringValue(data?.baseSentence);
+function parseComprehension(root: Record<string, unknown>): ComprehensionQuestion[] {
+  return arrayValue(root.comprehension)
+    .map(parseComprehensionQuestion)
+    .filter(isNonNull)
+    .slice(0, 3);
+}
 
-  return baseSentence
+function parseComprehensionQuestion(value: unknown): ComprehensionQuestion | null {
+  const data = recordValue(value);
+  const question = stringValue(data?.question);
+  const answer = stringValue(data?.answer);
+
+  return question && answer
     ? {
-        id: stringValue(data?.id) ?? slugify(baseSentence),
-        baseSentence,
-        targetWord: stringValue(data?.targetWord) ?? "work",
-        replacements: stringArray(data?.replacements).slice(0, 5),
-        modelAnswer: stringValue(data?.modelAnswer) ?? baseSentence
+        id: stringValue(data?.id) ?? slugify(question),
+        type:
+          enumValue(data?.type, ["mainIdea", "relationship", "keyInfo", "meaning"] as const) ??
+          "mainIdea",
+        question,
+        options: stringArray(data?.options).slice(0, 4),
+        answer,
+        explanation: stringValue(data?.explanation) ?? "基于视频内容判断。",
+        userAnswer: stringValue(data?.userAnswer),
+        completed: booleanValue(data?.completed) ?? false
       }
     : null;
 }
 
-function parseSentenceBuilder(value: unknown): SentenceBuilderPractice | null {
-  const data = recordValue(value);
-  const modelAnswer = stringValue(data?.modelAnswer);
-
-  return modelAnswer
-    ? {
-        id: stringValue(data?.id) ?? slugify(modelAnswer),
-        keywords: stringArray(data?.keywords).slice(0, 6),
-        modelAnswer,
-        context: stringValue(data?.context) ?? "用关键词组成一句自然口语。"
-      }
-    : null;
-}
-
-function parseSpeaking(root: Record<string, unknown>): DailyTraining["speaking"] {
-  const data = recordValue(root.speaking) ?? recordValue(root.speakingTask) ?? {};
+function parseShadowing(
+  root: Record<string, unknown>,
+  segments: TranscriptSegment[]
+): ShadowingTask {
+  const data = recordValue(root.shadowing) ?? {};
 
   return {
-    question:
+    segmentIds: stringArray(data.segmentIds).length
+      ? stringArray(data.segmentIds).slice(0, 5)
+      : segments.slice(0, 3).map((segment) => segment.id),
+    recordings: recordOfStrings(data.recordings),
+    completed: booleanValue(data.completed) ?? false
+  };
+}
+
+function parseOutputTask(root: Record<string, unknown>, learningItems: LearningItem[]): OutputTask {
+  const data = recordValue(root.outputTask) ?? recordValue(root.speaking) ?? {};
+
+  return {
+    prompt:
+      stringValue(data.prompt) ??
       stringValue(data.question) ??
-      stringValue(data.topic) ??
-      stringValue(data.requirement) ??
-      "Introduce what you are responsible for at work in 30 seconds."
+      "Imagine you are joining a new team. Introduce yourself and use at least three expressions from this lesson.",
+    requiredItemIds: stringArray(data.requiredItemIds).length
+      ? stringArray(data.requiredItemIds).slice(0, 3)
+      : learningItems.slice(0, 3).map((item) => item.id),
+    recordingUrl: stringValue(data.recordingUrl),
+    transcript: stringValue(data.transcript),
+    feedback: stringValue(data.feedback),
+    completed: booleanValue(data.completed) ?? false
+  };
+}
+
+function parseLessonReview(
+  root: Record<string, unknown>,
+  learningItems: LearningItem[],
+  segments: TranscriptSegment[]
+): LessonReviewSummary {
+  const data = recordValue(root.lessonReview) ?? {};
+
+  return {
+    expressions: stringArray(data.expressions).length
+      ? stringArray(data.expressions).slice(0, 3)
+      : learningItems.slice(0, 3).map((item) => item.text),
+    soundIssues: stringArray(data.soundIssues).length
+      ? stringArray(data.soundIssues).slice(0, 2)
+      : learningItems
+          .filter((item) => item.type === "pronunciation" || item.type === "connectedSpeech")
+          .slice(0, 2)
+          .map((item) => item.text),
+    reviewSentence:
+      stringValue(data.reviewSentence) ?? segments[0]?.text ?? "Review one useful sentence from today.",
+    addedToReview: booleanValue(data.addedToReview) ?? false
+  };
+}
+
+function normalizeExpressions(
+  root: Record<string, unknown>,
+  learningItems: LearningItem[]
+): TrainingExpression[] {
+  const direct = arrayValue(root.expressions)
+    .map(parseExpression)
+    .filter(isNonNull);
+  const fromItems = learningItems.map((item) => ({
+    id: item.id,
+    expression: item.text,
+    meaning: item.meaning,
+    example: item.reusableExample,
+    scenario: "本课视频语境",
+    pronunciation: item.pronunciation,
+    difficulty: item.level,
+    favorite: item.saved,
+    reviewDate: addDays(getTodayKey(), 1),
+    mastery: "new" as const
+  }));
+
+  return dedupeExpressions([...direct, ...fromItems]).slice(0, 8);
+}
+
+function parseExpression(value: unknown): TrainingExpression | null {
+  const data = recordValue(value);
+  const expression = stringValue(data?.expression) ?? stringValue(data?.text) ?? stringValue(data?.word);
+
+  return expression
+    ? {
+        id: stringValue(data?.id) ?? slugify(expression),
+        expression,
+        meaning: stringValue(data?.meaning) ?? "常用表达",
+        example: stringValue(data?.example) ?? stringValue(data?.exampleSentence) ?? expression,
+        scenario: stringValue(data?.scenario) ?? "真实口语语境",
+        pronunciation: stringValue(data?.pronunciation) ?? "自然连读。",
+        difficulty: stringValue(data?.difficulty) ?? "B1",
+        favorite: booleanValue(data?.favorite) ?? false,
+        reviewDate: dateString(data?.reviewDate) ?? addDays(getTodayKey(), 1),
+        mastery: enumValue(data?.mastery, validMastery) ?? "new"
+      }
+    : null;
+}
+
+function parsePractice(segments: TranscriptSegment[]): PracticeModule {
+  return {
+    fillBlank: segments.slice(0, 2).map((segment) => ({
+      id: `fill-${segment.id}`,
+      prompt: hideOneWord(segment.text),
+      answer: pickHiddenWord(segment.text),
+      hint: "来自本课转录句。"
+    })),
+    replacements: [],
+    sentenceBuilders: []
   };
 }
 
 function parseReadingCard(
   root: Record<string, unknown>,
-  expressions: TrainingExpression[]
+  segments: TranscriptSegment[],
+  learningItems: LearningItem[]
 ): ReadingCard {
-  const data = recordValue(root.reading) ?? recordValue(root.readingTask) ?? {};
-  const resource = recordValue(data.resource) ?? firstResource(root, "reading") ?? {};
-  const highlights = arrayValue(data.highlightedExpressions)
-    .map(parseReadingHighlight)
-    .filter(isNonNull);
-  const fallbackText = buildFallbackReading(expressions);
+  const resource = parseListening(root).resource;
 
   return {
-    title:
-      stringValue(data.title) ??
-      stringValue(resource.title) ??
-      "A short workplace update",
-    source:
-      stringValue(data.source) ??
-      stringValue(resource.source) ??
-      stringValue(resource.websiteName) ??
-      "Daily Training",
-    url: httpUrl(data.url) ?? httpUrl(resource.url) ?? "https://learningenglish.voanews.com/",
-    level:
-      stringValue(data.level) ??
-      stringValue(resource.difficulty) ??
-      "IELTS 5.0-6.0",
-    text: normalizeReadingText(stringValue(data.text), fallbackText),
-    zhAssist:
-      stringValue(data.zhAssist) ??
-      "阅读时不要逐句翻译，先抓主题，再圈出能放进口语里的表达。",
-    highlightedExpressions: highlights.length
-      ? highlights.slice(0, 8)
-      : expressions.slice(0, 5).map((item) => ({
-          expression: item.expression,
-          meaning: item.meaning,
-          example: item.example
-        }))
+    title: resource.title,
+    source: resource.source,
+    url: resource.url,
+    level: resource.level,
+    text: segments.map((segment) => segment.text).join(" "),
+    zhAssist: "本页阅读文本来自视频逐句转录。",
+    highlightedExpressions: learningItems.slice(0, 8).map((item) => ({
+      expression: item.text,
+      meaning: item.meaning,
+      example: item.reusableExample
+    }))
   };
-}
-
-function parseReadingHighlight(value: unknown): ReadingHighlight | null {
-  const data = recordValue(value);
-  const expression = stringValue(data?.expression);
-
-  return expression
-    ? {
-        expression,
-        meaning: stringValue(data?.meaning) ?? "可复用表达",
-        example: stringValue(data?.example) ?? `Try to use "${expression}" in your own sentence.`
-      }
-    : null;
 }
 
 function parseReviewItems(
   root: Record<string, unknown>,
-  expressions: TrainingExpression[]
+  learningItems: LearningItem[]
 ): ReviewItem[] {
-  const review = arrayValue(root.review).map(parseReviewItem).filter(isNonNull);
+  const direct = arrayValue(root.review).map(parseReviewItem).filter(isNonNull);
 
-  if (review.length) {
-    return review.slice(0, 8);
+  if (direct.length) {
+    return direct.slice(0, 8);
   }
 
-  return expressions.slice(0, 2).map((item) => ({
+  return learningItems.slice(0, 3).map((item) => ({
     expressionId: item.id,
-    expression: item.expression,
+    expression: item.text,
     meaning: item.meaning,
-    dueDate: getTodayKey(),
-    prompt: "用这个表达重新造一句自己的真实句子。"
+    dueDate: addDays(getTodayKey(), 1),
+    prompt: "用这个表达造一句自己的真实句子。"
   }));
 }
 
@@ -448,18 +556,18 @@ function parseReviewItem(value: unknown): ReviewItem | null {
         expressionId: stringValue(data?.expressionId) ?? slugify(expression),
         expression,
         meaning: stringValue(data?.meaning) ?? "复习表达",
-        dueDate: dateString(data?.dueDate) ?? getTodayKey(),
-        prompt: stringValue(data?.prompt) ?? "用这个表达重新造一句自己的真实句子。"
+        dueDate: dateString(data?.dueDate) ?? addDays(getTodayKey(), 1),
+        prompt: stringValue(data?.prompt) ?? "用这个表达造一句自己的真实句子。"
       }
     : null;
 }
 
 function parseWeaknesses(data?: Record<string, unknown>): WeaknessTracking {
   return {
-    listening: withFallback(stringArray(data?.listening), ["真实语速适应"]),
-    expression: withFallback(stringArray(data?.expression), ["表达块积累不足"]),
-    speaking: withFallback(stringArray(data?.speaking), ["句型容易重复"]),
-    reading: withFallback(stringArray(data?.reading), ["阅读表达迁移"])
+    listening: stringArray(data?.listening).slice(0, 5),
+    expression: stringArray(data?.expression).slice(0, 5),
+    speaking: stringArray(data?.speaking).slice(0, 5),
+    reading: stringArray(data?.reading).slice(0, 5)
   };
 }
 
@@ -483,45 +591,44 @@ function parseStepStatus(data?: Record<string, unknown>): DailyTraining["stepSta
   );
 }
 
-function firstResource(root: Record<string, unknown>, type: "listening" | "reading") {
-  return arrayValue(root.resources)
-    .map(recordValue)
-    .find((item) => item && stringValue(item.type) === type);
+function buildFallbackLearningItems(segments: TranscriptSegment[]): LearningItem[] {
+  const source = segments[0];
+
+  if (!source) {
+    return [];
+  }
+
+  return [
+    {
+      id: "source-expression",
+      type: "expression",
+      text: source.text.split(/\s+/).slice(0, 4).join(" "),
+      meaning: "本句中的可复用表达",
+      pronunciation: "听原句，注意重音和弱读。",
+      sourceSentence: source.text,
+      sourceStartTime: source.startTime,
+      collocations: [],
+      reusableExample: source.text,
+      level: "B1",
+      saved: false,
+      mastery: "unknown"
+    }
+  ];
 }
 
-function fallbackListeningResource(): Record<string, unknown> {
-  return {
-    title: "VOA Learning English",
-    source: "VOA Learning English",
-    url: "https://learningenglish.voanews.com/",
-    level: "IELTS 5.0-6.0",
-    duration: "5 分钟",
-    playerType: "web",
-    whySuitable: "清晰、慢速、适合建立听力输入习惯。"
-  };
-}
+function dedupeLearningItems(items: LearningItem[]): LearningItem[] {
+  const seen = new Set<string>();
 
-function fillExpressions(expressions: TrainingExpression[]): TrainingExpression[] {
-  const fallback = [
-    ["be responsible for", "负责某事", "I am responsible for updating the client every week."],
-    ["follow up on", "继续跟进", "I will follow up on this after the meeting."],
-    ["get back to someone", "稍后回复某人", "I will get back to you this afternoon."],
-    ["figure out", "弄清楚", "Let me figure out what happened first."],
-    ["make it work", "想办法搞定", "The schedule is tight, but we can make it work."]
-  ].map(([expression, meaning, example]) => ({
-    id: slugify(expression),
-    expression,
-    meaning,
-    example,
-    scenario: "日常和职场交流",
-    pronunciation: "自然连读，重音放在核心信息上。",
-    difficulty: "基础高频",
-    favorite: false,
-    reviewDate: addDays(getTodayKey(), 1),
-    mastery: "new" as const
-  }));
+  return items.filter((item) => {
+    const key = item.text.toLowerCase();
 
-  return dedupeExpressions([...expressions, ...fallback]);
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 function dedupeExpressions(expressions: TrainingExpression[]): TrainingExpression[] {
@@ -539,32 +646,61 @@ function dedupeExpressions(expressions: TrainingExpression[]): TrainingExpressio
   });
 }
 
-function buildFallbackReading(expressions: TrainingExpression[]): string {
-  const [first, second] = expressions;
-
-  return [
-    "At work, clear communication often matters more than complicated English.",
-    `When you explain your role, you can say "${first?.expression ?? "be responsible for"}" and then give one simple example.`,
-    `When you need more time, "${second?.expression ?? "get back to someone"}" sounds natural and polite.`,
-    "The goal is not to sound formal. The goal is to sound clear, calm, and useful in a real conversation.",
-    "After reading, choose one expression and use it in your own situation today."
-  ].join(" ");
+function firstResource(root: Record<string, unknown>, type: "listening" | "reading") {
+  return arrayValue(root.resources)
+    .map(recordValue)
+    .find((item) => item && stringValue(item.type) === type);
 }
 
-function normalizeReadingText(text: string | undefined, fallback: string): string {
-  if (!text) {
-    return fallback;
+function fallbackListeningResource(): Record<string, unknown> {
+  return {
+    title: "Bilibili English listening practice",
+    source: "Bilibili",
+    url: "https://search.bilibili.com/all?keyword=BBC%20Learning%20English",
+    level: "B1 / IELTS 5.0-5.5",
+    duration: "5 minutes",
+    playerType: "web",
+    whySuitable: "用于查找可播放英语听力资源。"
+  };
+}
+
+function hideOneWord(text: string): string {
+  const word = pickHiddenWord(text);
+  return word ? text.replace(new RegExp(`\\b${escapeRegExp(word)}\\b`, "i"), "___") : text;
+}
+
+function pickHiddenWord(text: string): string {
+  return (
+    text
+      .split(/\s+/)
+      .map((word) => word.replace(/[^a-zA-Z']/g, ""))
+      .find((word) => word.length > 4) ?? ""
+  );
+}
+
+function recordOfStrings(value: unknown): Record<string, string> {
+  const data = recordValue(value) ?? {};
+  return Object.fromEntries(
+    Object.entries(data).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  );
+}
+
+function parseTimestamp(value?: string): number | undefined {
+  if (!value) {
+    return undefined;
   }
 
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  return wordCount < 40 ? `${text} ${fallback}` : text;
+  const parts = value.split(":").map(Number);
+
+  if (parts.some((part) => Number.isNaN(part))) {
+    return undefined;
+  }
+
+  return parts.reduce((total, part) => total * 60 + part, 0);
 }
 
 function stripCodeFence(value: string): string {
-  return value
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+  return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
 function extractFirstJsonObject(value: string): string {
@@ -636,6 +772,10 @@ function booleanValue(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
@@ -686,10 +826,6 @@ function inferPhase(dayNumber: number): TrainingPhase {
   return dayNumber <= 120 ? "phase2-bridge" : "phase3-ielts7";
 }
 
-function withFallback(values: string[], fallback: string[]): string[] {
-  return values.length ? values.slice(0, 5) : fallback;
-}
-
 function toYoutubeEmbedUrl(url: string): string | undefined {
   const id = extractYoutubeId(url);
   return id ? `https://www.youtube.com/embed/${id}` : undefined;
@@ -709,8 +845,7 @@ function extractBilibiliId(url: string): string | undefined {
       return fromQuery;
     }
 
-    const match = parsed.pathname.match(/BV[a-zA-Z0-9]+/);
-    return match?.[0];
+    return parsed.pathname.match(/BV[a-zA-Z0-9]+/)?.[0];
   } catch {
     return undefined;
   }
@@ -752,6 +887,10 @@ function addDays(date: string, days: number): string {
 
 function getTodayKey(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

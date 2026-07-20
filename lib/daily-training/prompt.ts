@@ -12,66 +12,55 @@ export function buildDailyTrainingMessages({
   dayNumber,
   historySummary
 }: BuildDailyTrainingMessagesArgs): ChatMessage[] {
-  const phaseRule = buildPhaseRule(dayNumber);
-
   return [
     {
       role: "system",
       content: [
-        "You are a real English growth coach for a Chinese native speaker.",
-        "The learner is around CET6 in reading, but weak in listening, speaking, vocabulary depth, connected speech, real-speed input, and natural output.",
-        "Create one Daily English Training session as a complete training loop: Input -> Understand -> Practice -> Output -> Review.",
+        "You are designing a daily English listening training lesson for a Chinese learner.",
+        "The learner is CET6-ish in reading, weak in listening and speaking, and currently needs IELTS 5.0-6.0 input.",
+        "The product is not a textbook page. It is an interactive listening tool.",
         "",
-        "Product direction:",
-        "- This is not a textbook page and not an IELTS template generator.",
-        "- Reduce explanation density. Create actionable tasks the learner can finish in 30-60 minutes.",
-        "- Train modern, natural English expression chunks, not isolated dictionary words.",
-        "- Do not use old IELTS templates such as: Every coin has two sides, With the development of society, Nowadays more and more people.",
-        "- Prefer workplace, daily life, meetings, travel, simple business, and real conversation in early stages.",
+        "Core workflow:",
+        "Watch -> synchronized transcript -> mark unclear sentences -> dictation -> learn useful items -> shadowing -> one output task -> complete lesson.",
         "",
         "Resource rules:",
-        "- Use web search or browsing if your connected agent API supports it.",
-        "- Core listening source priority for this China-facing product: Bilibili embeddable videos first, then direct audio pages, then BBC/British Council/VOA web pages, and YouTube only as a last overseas fallback.",
-        "- Prefer Bilibili videos related to BBC Learning English, TED, TED-Ed, VOA Learning English, daily English listening, and workplace spoken English.",
-        "- Listening must be playable inside the site when possible: for Bilibili provide a normal video URL plus player.bilibili.com embedUrl; for direct audio provide audioUrl. If neither is available, use playerType web and provide the source URL plus a short transcript/summary.",
-        "- Before choosing a listening video, verify the original page is not 404, not moved, not private, and not region/embedding restricted.",
-        "- Do not use old BBC Chinese paths such as /learningenglish/chinese/features/... unless you have verified the exact page still exists.",
-        "- For Bilibili, only use public videos with a valid BV id. The embedUrl must look like https://player.bilibili.com/player.html?bvid=BV...&page=1&autoplay=0.",
-        "- For YouTube, only use public videos that can be embedded; provide both the watch URL and the /embed/ URL. Avoid YouTube unless no Bilibili/direct-audio option fits.",
-        "- Reading must be a Daily Reading Card of 100-200 words based on or adapted from a real linked source. Do not paste a copyrighted full article.",
-        "- Vocabulary must come from the selected listening/reading theme and be written as reusable expression chunks.",
-        "- Provide all resource links and difficulty judgments.",
+        "- Prefer Bilibili embeddable videos for China-based users.",
+        "- Use public Bilibili videos related to BBC Learning English, TED/TED-Ed, VOA, workplace spoken English, daily conversation, or clear listening practice.",
+        "- Provide a valid normal Bilibili video URL and an embed URL like https://player.bilibili.com/player.html?bvid=BV...&page=1&autoplay=0.",
+        "- YouTube is a last fallback only.",
+        "- Do not use dead pages, moved pages, private videos, non-embeddable videos, or old BBC Chinese paths.",
         "",
-        "Strict output rules:",
-        "- Return strict JSON only. No markdown, no comments, no surrounding prose.",
-        "- Keep all user-facing strings in Simplified Chinese except English expressions, examples, URLs, and titles."
+        "Transcript rules:",
+        "- Provide transcriptSegments only when you have real transcript/subtitle text from the selected resource or visible source data.",
+        "- Do not invent a fake transcript unrelated to the video.",
+        "- Split transcript by speaker turn or sentence with startTime/endTime in seconds.",
+        "- If no reliable transcript is available, set transcriptSource to unavailable and return empty transcriptSegments.",
+        "",
+        "Learning item rules:",
+        "- Extract useful items from the transcript, not random words.",
+        "- Prefer reusable expressions, workplace collocations, connected speech, weak forms, and useful vocabulary slightly above the learner's level.",
+        "- Avoid names, places, rare proper nouns, isolated basic words, and low-reuse trivia.",
+        "",
+        "Return strict JSON only. Keep UI-facing explanations in Simplified Chinese."
       ].join("\n")
     },
     {
       role: "user",
       content: [
-        `Generate Daily English Training for date: ${date}.`,
-        `This is Day ${dayNumber}.`,
-        phaseRule,
+        `Generate one Daily English Training lesson for ${date}.`,
+        `Day number: ${dayNumber}.`,
+        buildPhaseRule(dayNumber),
         "",
-        "Recent learning state:",
+        "Recent state:",
         JSON.stringify(historySummary, null, 2),
         "",
         "Return exactly this JSON shape:",
         `{
   "date": "YYYY-MM-DD",
   "dayNumber": number,
-  "level": "IELTS 5.0-6.0" | "IELTS 6.0-6.5" | "IELTS 7+",
-  "phase": "phase1-foundation" | "phase2-bridge" | "phase3-ielts7",
+  "level": "IELTS 5.0-6.0",
+  "phase": "phase1-foundation",
   "topic": string,
-  "activeStep": "listening",
-  "stepStatus": {
-    "listening": false,
-    "expression": false,
-    "practice": false,
-    "speaking": false,
-    "review": false
-  },
   "listening": {
     "resource": {
       "title": string,
@@ -79,120 +68,92 @@ export function buildDailyTrainingMessages({
       "url": string,
       "embedUrl": string,
       "audioUrl": string,
-      "level": string,
+      "level": "B1 / IELTS 5.0-5.5",
       "duration": string,
       "playerType": "bilibili" | "youtube" | "audio" | "web",
       "whySuitable": string
     },
-    "firstListen": {
-      "instruction": "第一遍：不看字幕，只抓大意。",
-      "questions": [
-        "What is the topic?",
-        "Who is speaking?",
-        "What is the main idea?"
-      ]
-    },
-    "secondListen": {
-      "instruction": "第二遍：打开英文字幕，抓表达块。",
-      "task": "写下 5 个你能马上用到的表达。"
-    },
     "transcript": string
   },
-  "expressions": [
+  "transcriptSource": "official" | "auto" | "asr" | "unavailable",
+  "transcriptSegments": [
     {
       "id": string,
-      "expression": string,
-      "meaning": string,
-      "example": string,
-      "scenario": string,
-      "pronunciation": string,
-      "difficulty": string,
-      "favorite": false,
-      "reviewDate": "YYYY-MM-DD",
-      "mastery": "new"
+      "startTime": number,
+      "endTime": number,
+      "speaker": string,
+      "text": string,
+      "translation": string,
+      "vocabularyIds": [string],
+      "expressionIds": [string],
+      "markedUnclear": false,
+      "completed": false
     }
   ],
-  "practice": {
-    "fillBlank": [
-      {
-        "id": string,
-        "prompt": "I am responsible ___ managing projects.",
-        "answer": "for",
-        "hint": string
-      }
-    ],
-    "replacements": [
-      {
-        "id": string,
-        "baseSentence": "I work in marketing.",
-        "targetWord": "marketing",
-        "replacements": ["sales", "finance", "customer service"],
-        "modelAnswer": "I work in sales."
-      }
-    ],
-    "sentenceBuilders": [
-      {
-        "id": string,
-        "keywords": ["responsible", "manage", "project"],
-        "modelAnswer": "I am responsible for managing this project.",
-        "context": string
-      }
-    ]
-  },
-  "speaking": {
-    "question": string
-  },
-  "reading": {
-    "title": string,
-    "source": string,
-    "url": string,
-    "level": string,
-    "text": string,
-    "zhAssist": string,
-    "highlightedExpressions": [
-      {
-        "expression": string,
-        "meaning": string,
-        "example": string
-      }
-    ]
-  },
-  "review": [
+  "learningItems": [
     {
-      "expressionId": string,
-      "expression": string,
+      "id": string,
+      "type": "vocabulary" | "expression" | "pronunciation" | "connectedSpeech",
+      "text": string,
       "meaning": string,
-      "dueDate": "YYYY-MM-DD",
-      "prompt": string
+      "pronunciation": string,
+      "sourceSentence": string,
+      "sourceStartTime": number,
+      "collocations": [string],
+      "reusableExample": string,
+      "level": string,
+      "saved": false,
+      "mastery": "unknown"
     }
   ],
-  "weaknesses": {
-    "listening": [string],
-    "expression": [string],
-    "speaking": [string],
-    "reading": [string]
+  "dictation": [
+    {
+      "segmentId": string,
+      "userAnswer": "",
+      "correctText": string,
+      "missingWords": [],
+      "incorrectWords": [],
+      "completed": false,
+      "hint": string
+    }
+  ],
+  "comprehension": [
+    {
+      "id": string,
+      "type": "mainIdea" | "relationship" | "keyInfo" | "meaning",
+      "question": string,
+      "options": [string],
+      "answer": string,
+      "explanation": string,
+      "completed": false
+    }
+  ],
+  "shadowing": {
+    "segmentIds": [string],
+    "recordings": {},
+    "completed": false
   },
-  "dashboard": {
-    "totalDays": number,
-    "learnedExpressions": number,
-    "listeningMinutes": number,
-    "speakingPracticeCount": number,
-    "reviewAccuracy": number
+  "outputTask": {
+    "prompt": string,
+    "requiredItemIds": [string],
+    "completed": false
+  },
+  "lessonReview": {
+    "expressions": [string],
+    "soundIssues": [string],
+    "reviewSentence": string,
+    "addedToReview": false
   },
   "completed": false
 }`,
         "",
-        "Quality constraints:",
-        "- Include 5-8 expressions, each as a reusable language chunk.",
-        "- Include 2 fillBlank tasks, 1 replacement task, and 1 sentenceBuilder task.",
-        "- The reading text must be 100-200 words and easy enough for IELTS 5.0-6.0 during the first 60 days.",
-        "- Review items should prioritize dueReviewExpressions from history. If there are none, review 2 current expressions.",
-        "- Weaknesses should be short Chinese labels based on history and current task, not generic long paragraphs.",
-        "- For the first 14 days, do not include writing tasks at all.",
-        "- All URLs must be valid http(s) URLs.",
-        "- Listening resource must be currently valid and playable. Do not return dead pages, moved pages, pages showing 404/not found, private videos, or non-embeddable videos.",
-        "- Prefer playerType bilibili for the listening resource. YouTube is not suitable for most China-based users.",
-        "- If using YouTube, convert watch URLs to embed URLs."
+        "Quality requirements:",
+        "- transcriptSegments should include the full usable transcript for the selected clip, ideally 8-25 segments for a short lesson.",
+        "- dictation must contain 3-5 segmentIds selected from transcriptSegments.",
+        "- learningItems must contain 6-10 useful items from transcriptSegments.",
+        "- comprehension must contain 2-3 interactive questions based on the video content.",
+        "- outputTask must be one 30-60 second speaking task using 3 lesson expressions.",
+        "- Do not include old modules like large reading cards, growth stats, weak-point panels, or static first/second listen cards."
       ].join("\n")
     }
   ];
@@ -215,21 +176,19 @@ export function buildSpeakingFeedbackMessages({
       content: [
         "You are an AI speaking coach for practical, natural English.",
         "Judge the learner as if they are speaking in a real conversation, not writing an essay.",
-        "Reward simple, clear, natural spoken English, useful chunks, contractions, and context-appropriate wording.",
-        "Do not over-penalize small spoken slips, missing minor prefixes, fragments, or casual wording if the meaning is clear.",
-        "Penalize stiff translation-style English, unnatural written style, word-for-word Chinese phrasing, and tone mismatch.",
-        "Return strict JSON only. All explanations must be in Simplified Chinese except English examples."
+        "Reward clear spoken English and useful lesson expressions.",
+        "Do not invent precise accent scores. Give verifiable feedback only.",
+        "Return strict JSON only. Chinese feedback, English examples."
       ].join("\n")
     },
     {
       role: "user",
       content: [
         `Topic: ${topic}`,
-        `Speaking question: ${question}`,
-        `Target expressions: ${expressions.join(" / ")}`,
+        `Speaking task: ${question}`,
+        `Lesson expressions: ${expressions.join(" / ")}`,
         `Learner answer: ${answer}`,
         "",
-        "Return exactly:",
         `{
   "fluency": number,
   "grammar": number,
@@ -237,9 +196,7 @@ export function buildSpeakingFeedbackMessages({
   "naturalness": number,
   "suggestion": string,
   "betterVersion": string
-}`,
-        "",
-        "Scores must be 0-100. suggestion should be concise Chinese feedback focused on spoken naturalness."
+}`
       ].join("\n")
     }
   ];
@@ -248,28 +205,24 @@ export function buildSpeakingFeedbackMessages({
 function buildPhaseRule(dayNumber: number): string {
   if (dayNumber <= 60) {
     return [
-      "Phase 1 rule:",
-      "- Level target: IELTS 5.0-6.0.",
-      "- Focus: high-frequency expressions, language chunks, daily/business basics, listening adaptation, simple spoken output, and short reading.",
-      dayNumber <= 14
-        ? "- First two weeks: writing training is forbidden. Use Listening, Expression Bank, Practice, Speaking, Reading Card, and Review only."
-        : "- After the first two weeks: writing may be introduced later, but do not include it in this module yet."
+      "Phase 1:",
+      "- IELTS 5.0-6.0.",
+      "- Prioritize clear real speech, high-frequency expressions, workplace/daily topics, and short output.",
+      "- No writing module in the first two weeks."
     ].join("\n");
   }
 
   if (dayNumber <= 120) {
     return [
-      "Phase 2 rule:",
-      "- Level target: IELTS 6.0-6.5.",
-      "- Add accessible news English, business articles, and more complex expression patterns.",
-      "- Keep tasks practical and modern."
+      "Phase 2:",
+      "- IELTS 6.0-6.5.",
+      "- Add accessible news/business content while keeping listening trainable."
     ].join("\n");
   }
 
   return [
-    "Phase 3 rule:",
-    "- Level target: IELTS 7+.",
-    "- Add higher-level reading, academic expression, and more complex opinion discussion.",
-    "- Keep language modern and natural; never rely on memorized IELTS templates."
+    "Phase 3:",
+    "- IELTS 7+.",
+    "- Add harder topics and more abstract spoken output, but keep real speech and transcript-first training."
   ].join("\n");
 }

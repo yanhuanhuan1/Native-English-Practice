@@ -3,30 +3,31 @@
 import {
   Bookmark,
   BookmarkCheck,
-  CalendarDays,
   CheckCircle2,
-  ChevronRight,
   ExternalLink,
   Loader2,
   Mic,
-  Pause,
+  MoreHorizontal,
+  Play,
   RotateCcw,
+  Search,
   Sparkles,
-  Star,
-  Volume2
+  Volume2,
+  XCircle
 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ComprehensionQuestion,
   DailyTraining,
   DailyTrainingHistorySummary,
+  DictationExercise,
   EnglishTrainingRecord,
-  ExpressionMastery,
+  LearningItem,
+  LearningItemMastery,
   ReviewItem,
   SpeakingFeedback,
-  TrainingExpression,
-  TrainingStep
+  TranscriptSegment
 } from "@/types/daily-training";
 
 interface DailyTrainingApiResponse {
@@ -45,21 +46,20 @@ interface ServerConfigResponse {
 
 const storageKey = "daily-english-training-records";
 
-const steps: { key: TrainingStep; label: string; title: string }[] = [
-  { key: "listening", label: "Listening", title: "输入" },
-  { key: "expression", label: "Expression", title: "理解" },
-  { key: "practice", label: "Practice", title: "练习" },
-  { key: "speaking", label: "Speaking", title: "输出" },
-  { key: "review", label: "Review", title: "复习" }
-];
+const masteryLabels: Record<LearningItemMastery, string> = {
+  unknown: "不认识",
+  fuzzy: "模糊",
+  "known-passive": "认识但不会用",
+  active: "可以主动使用"
+};
 
 export function DailyEnglishTraining() {
   const [records, setRecords] = useState<EnglishTrainingRecord[]>([]);
-  const [activeDate, setActiveDate] = useState(() => getTodayKey());
-  const [activeStep, setActiveStep] = useState<TrainingStep>("listening");
+  const [activeDate] = useState(() => getTodayKey());
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     setRecords(loadTrainingRecords());
@@ -89,24 +89,14 @@ export function DailyEnglishTraining() {
     };
   }, []);
 
-  const sortedRecords = useMemo(
-    () => [...records].sort((left, right) => right.training.date.localeCompare(left.training.date)),
-    [records]
-  );
   const currentRecord =
     records.find((record) => record.training.date === activeDate) ?? null;
   const currentTraining = currentRecord?.training ?? null;
-  const trainingVersion = currentTraining ? getTrainingVersion(currentTraining) : "";
-  const progress = getProgress(records);
   const nextDayNumber = currentTraining?.dayNumber ?? getNextDayNumber(records);
-
-  useEffect(() => {
-    setActiveStep(currentTraining?.activeStep ?? "listening");
-  }, [currentTraining?.date, currentTraining?.activeStep]);
 
   async function handleGenerate(regenerate = false) {
     if (aiConfigured === false) {
-      setError("AI 服务尚未配置。上线版本需要在 Vercel 环境变量里配置 API_KEY。");
+      setError("AI 服务尚未配置。请先在 Vercel 环境变量里设置 API_KEY。");
       return;
     }
 
@@ -116,6 +106,7 @@ export function DailyEnglishTraining() {
 
     setIsGenerating(true);
     setError(null);
+    setMenuOpen(false);
 
     try {
       const response = await fetch("/api/daily-training", {
@@ -127,16 +118,10 @@ export function DailyEnglishTraining() {
           historySummary: buildHistorySummary(records)
         })
       });
-      const payload = (await response.json().catch(() => ({}))) as
-        | DailyTrainingApiResponse
-        | Record<string, never>;
+      const payload = (await response.json().catch(() => ({}))) as DailyTrainingApiResponse;
 
-      if (!response.ok || !("training" in payload) || !payload.training) {
-        throw new Error(
-          "error" in payload && payload.error
-            ? payload.error
-            : "生成失败，请稍后重试。"
-        );
+      if (!response.ok || !payload.training) {
+        throw new Error(payload.error ?? "生成失败，请稍后重试。");
       }
 
       const nextRecords = upsertRecord(records, {
@@ -145,33 +130,26 @@ export function DailyEnglishTraining() {
       });
       persistRecords(nextRecords);
       setRecords(nextRecords);
-      setActiveStep("listening");
     } catch (generateError) {
-      setError(
-        generateError instanceof Error ? generateError.message : "生成失败，请稍后重试。"
-      );
+      setError(generateError instanceof Error ? generateError.message : "生成失败，请稍后重试。");
     } finally {
       setIsGenerating(false);
     }
   }
 
-  function updateCurrentTraining(updater: (training: DailyTraining) => DailyTraining) {
+  function updateTraining(updater: (training: DailyTraining) => DailyTraining) {
     if (!currentTraining) {
       return;
     }
 
     const nextTraining = updater(currentTraining);
-    const completedSteps = steps
-      .filter((step) => nextTraining.stepStatus[step.key])
-      .map((step) => step.key);
     const nextRecord: EnglishTrainingRecord = {
       ...(currentRecord ?? { completedSteps: [] }),
-      training: {
-        ...nextTraining,
-        completed: completedSteps.length === steps.length
-      },
-      completedSteps,
-      completedAt: completedSteps.length === steps.length ? new Date().toISOString() : currentRecord?.completedAt
+      training: nextTraining,
+      completedSteps: nextTraining.completed
+        ? ["listening", "expression", "practice", "speaking", "review"]
+        : currentRecord?.completedSteps ?? [],
+      completedAt: nextTraining.completed ? new Date().toISOString() : currentRecord?.completedAt
     };
     const nextRecords = upsertRecord(records, nextRecord);
 
@@ -179,869 +157,944 @@ export function DailyEnglishTraining() {
     setRecords(nextRecords);
   }
 
-  function completeStep(step: TrainingStep) {
-    const nextStep = getNextStep(step);
-
-    updateCurrentTraining((training) => ({
-      ...training,
-      activeStep: nextStep ?? step,
-      stepStatus: {
-        ...training.stepStatus,
-        [step]: true
-      }
-    }));
-
-    if (nextStep) {
-      setActiveStep(nextStep);
-    }
-  }
-
   return (
-    <main className="daily-training-page daily-training-flow-page">
-      <header className="daily-training-topbar daily-training-flow-topbar">
-        <div>
-          <span className="daily-training-kicker">Daily English Training</span>
-          <h1>每日英语训练</h1>
-        </div>
-        <Link className="daily-training-link" href="/">
+    <main className="daily-lesson-page">
+      <header className="daily-lesson-appbar">
+        <Link className="daily-lesson-back" href="/">
           返回口语跟练
         </Link>
       </header>
 
-      <section className="daily-training-flow-shell">
-        <aside className="daily-training-flow-side">
-          <Panel title="训练日期" icon={<CalendarDays size={18} aria-hidden="true" />}>
-            <input
-              aria-label="训练日期"
-              className="daily-training-date-input"
-              type="date"
-              value={activeDate}
-              onChange={(event) => setActiveDate(event.target.value)}
-            />
-            <button
-              className="daily-training-primary"
-              disabled={isGenerating || aiConfigured === false || !!currentTraining}
-              type="button"
-              onClick={() => void handleGenerate(false)}
-            >
-              {isGenerating ? (
-                <Loader2 className="daily-training-spin" size={17} aria-hidden="true" />
-              ) : (
-                <Sparkles size={17} aria-hidden="true" />
-              )}
-              {currentTraining ? "今日已生成" : "生成今日训练"}
-            </button>
-            {currentTraining ? (
-              <button
-                className="daily-training-ghost"
-                disabled={isGenerating || aiConfigured === false}
-                type="button"
-                onClick={() => void handleGenerate(true)}
-              >
-                <RotateCcw size={16} aria-hidden="true" />
-                重新生成
-              </button>
-            ) : null}
-            {aiConfigured === false ? (
-              <p className="daily-training-error">
-                AI 服务尚未配置。请在 Vercel 环境变量中设置 API_KEY。
-              </p>
-            ) : null}
-            {error ? <p className="daily-training-error">{error}</p> : null}
-          </Panel>
-
-          <Panel title="成长统计" icon={<Star size={18} aria-hidden="true" />}>
-            <div className="daily-training-metric-grid">
-              <Metric label="Total Days" value={`${progress.totalDays}`} />
-              <Metric label="Expressions" value={`${progress.learnedExpressions}`} />
-              <Metric label="Listening" value={`${progress.listeningHours}h`} />
-              <Metric label="Speaking" value={`${progress.speakingPracticeCount}`} />
-              <Metric label="Review" value={`${progress.reviewAccuracy}%`} />
-            </div>
-          </Panel>
-
-          <Panel title="薄弱点" icon={<RotateCcw size={18} aria-hidden="true" />}>
-            <WeaknessList training={currentTraining} />
-          </Panel>
-
-          <Panel title="最近记录" icon={<CheckCircle2 size={18} aria-hidden="true" />}>
-            {sortedRecords.length === 0 ? (
-              <p className="daily-training-muted">还没有训练记录。</p>
-            ) : (
-              <div className="daily-training-history-list">
-                {sortedRecords.slice(0, 8).map((record) => (
-                  <button
-                    aria-pressed={record.training.date === activeDate}
-                    className="daily-training-history-item"
-                    key={record.training.date}
-                    type="button"
-                    onClick={() => setActiveDate(record.training.date)}
-                  >
-                    <strong>Day {record.training.dayNumber}</strong>
-                    <span>{record.training.topic}</span>
-                    <small>
-                      {record.training.date}
-                      {record.training.completed ? " · 已完成" : ""}
-                    </small>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </aside>
-
-        <section className="daily-training-workspace">
-          {!currentTraining ? (
-            <EmptyTrainingState
-              isGenerating={isGenerating}
-              onGenerate={() => void handleGenerate(false)}
-            />
-          ) : (
-            <>
-              <TrainingHeader
-                activeStep={activeStep}
-                onStepChange={setActiveStep}
-                training={currentTraining}
-              />
-              <div className="daily-training-step-stage" key={`${trainingVersion}-${activeStep}`}>
-                {activeStep === "listening" ? (
-                  <ListeningStep training={currentTraining} onDone={() => completeStep("listening")} />
-                ) : null}
-                {activeStep === "expression" ? (
-                  <ExpressionStep
-                    expressions={currentTraining.expressions}
-                    onDone={() => completeStep("expression")}
-                    onUpdateExpression={(expressionId, updates) =>
-                      updateCurrentTraining((training) => ({
-                        ...training,
-                        expressions: training.expressions.map((expression) =>
-                          expression.id === expressionId
-                            ? { ...expression, ...updates }
-                            : expression
-                        )
-                      }))
-                    }
-                  />
-                ) : null}
-                {activeStep === "practice" ? (
-                  <PracticeStep training={currentTraining} onDone={() => completeStep("practice")} />
-                ) : null}
-                {activeStep === "speaking" ? (
-                  <SpeakingStep
-                    training={currentTraining}
-                    onDone={() => completeStep("speaking")}
-                    onFeedback={(answer, feedback) =>
-                      updateCurrentTraining((training) => ({
-                        ...training,
-                        speaking: {
-                          ...training.speaking,
-                          answer,
-                          feedback
-                        }
-                      }))
-                    }
-                  />
-                ) : null}
-                {activeStep === "review" ? (
-                  <ReviewStep
-                    training={currentTraining}
-                    trainingVersion={trainingVersion}
-                    onDone={() => completeStep("review")}
-                    onUpdateReview={(review) =>
-                      updateCurrentTraining((training) => ({ ...training, review }))
-                    }
-                  />
-                ) : null}
-              </div>
-            </>
-          )}
-        </section>
-      </section>
+      {!currentTraining ? (
+        <EmptyLesson
+          aiConfigured={aiConfigured}
+          error={error}
+          isGenerating={isGenerating}
+          onGenerate={() => void handleGenerate(false)}
+        />
+      ) : (
+        <LessonWorkspace
+          error={error}
+          isGenerating={isGenerating}
+          menuOpen={menuOpen}
+          training={currentTraining}
+          onMenuToggle={() => setMenuOpen((open) => !open)}
+          onRegenerate={() => void handleGenerate(true)}
+          onUpdate={updateTraining}
+        />
+      )}
     </main>
   );
 }
 
-function TrainingHeader({
-  activeStep,
-  onStepChange,
+function LessonWorkspace({
+  error,
+  isGenerating,
+  menuOpen,
+  onMenuToggle,
+  onRegenerate,
+  onUpdate,
   training
 }: {
-  activeStep: TrainingStep;
-  onStepChange: (step: TrainingStep) => void;
+  error: string | null;
+  isGenerating: boolean;
+  menuOpen: boolean;
+  onMenuToggle: () => void;
+  onRegenerate: () => void;
+  onUpdate: (updater: (training: DailyTraining) => DailyTraining) => void;
   training: DailyTraining;
 }) {
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  const [playerSeed, setPlayerSeed] = useState(0);
+  const [activeSegmentId, setActiveSegmentId] = useState(training.transcriptSegments[0]?.id ?? "");
+  const [loopSegmentId, setLoopSegmentId] = useState<string | null>(null);
+  const [iframePlayback, setIframePlayback] = useState<{
+    startedAt: number;
+    startTime: number;
+  } | null>(null);
+  const transcriptVersion = useMemo(
+    () =>
+      training.transcriptSegments
+        .map((segment) => `${segment.id}:${segment.startTime}:${segment.endTime}`)
+        .join("|"),
+    [training.transcriptSegments]
+  );
+  const firstSegmentId = training.transcriptSegments[0]?.id ?? "";
+
+  const progress = getLessonProgress(training);
+  const activeSegment =
+    training.transcriptSegments.find((segment) => segment.id === activeSegmentId) ??
+    training.transcriptSegments[0];
+
+  useEffect(() => {
+    setActiveSegmentId(firstSegmentId);
+    setLoopSegmentId(null);
+    setIframePlayback(null);
+    setPlayerSeed((seed) => seed + 1);
+  }, [firstSegmentId, training.listening.resource.url, transcriptVersion]);
+
+  function seekTo(segment: TranscriptSegment) {
+    setActiveSegmentId(segment.id);
+
+    if (mediaRef.current) {
+      mediaRef.current.currentTime = segment.startTime;
+      void mediaRef.current.play().catch(() => undefined);
+      return;
+    }
+
+    setIframePlayback({
+      startedAt: Date.now(),
+      startTime: segment.startTime
+    });
+    setPlayerSeed((seed) => seed + 1);
+  }
+
+  useEffect(() => {
+    if (mediaRef.current || !iframePlayback || training.transcriptSegments.length === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const elapsedSeconds = (Date.now() - iframePlayback.startedAt) / 1000;
+      const currentTime = iframePlayback.startTime + elapsedSeconds;
+      const nextActive = training.transcriptSegments.find(
+        (segment) => currentTime >= segment.startTime && currentTime <= segment.endTime
+      );
+
+      if (nextActive) {
+        setActiveSegmentId(nextActive.id);
+      }
+
+      if (loopSegmentId) {
+        const loopSegment = training.transcriptSegments.find((segment) => segment.id === loopSegmentId);
+
+        if (loopSegment && currentTime >= loopSegment.endTime) {
+          setActiveSegmentId(loopSegment.id);
+          setIframePlayback({
+            startedAt: Date.now(),
+            startTime: loopSegment.startTime
+          });
+          setPlayerSeed((seed) => seed + 1);
+        }
+      }
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [iframePlayback, loopSegmentId, training.transcriptSegments]);
+
+  function handleTimeUpdate() {
+    const currentTime = mediaRef.current?.currentTime ?? 0;
+    const nextActive = training.transcriptSegments.find(
+      (segment) => currentTime >= segment.startTime && currentTime <= segment.endTime
+    );
+
+    if (nextActive && nextActive.id !== activeSegmentId) {
+      setActiveSegmentId(nextActive.id);
+    }
+
+    if (loopSegmentId) {
+      const loopSegment = training.transcriptSegments.find((segment) => segment.id === loopSegmentId);
+
+      if (loopSegment && currentTime >= loopSegment.endTime && mediaRef.current) {
+        mediaRef.current.currentTime = loopSegment.startTime;
+      }
+    }
+  }
+
+  function toggleUnclear(segment: TranscriptSegment) {
+    onUpdate((draft) => ({
+      ...draft,
+      transcriptSegments: draft.transcriptSegments.map((item) =>
+        item.id === segment.id ? { ...item, markedUnclear: !item.markedUnclear } : item
+      ),
+      dictation: ensureSegmentInDictation(draft.dictation, segment)
+    }));
+  }
+
   return (
-    <section className="daily-training-flow-header">
-      <div>
-        <span>Day {training.dayNumber}</span>
-        <h2>{training.topic}</h2>
-        <p>{training.level} · {training.date}</p>
-      </div>
-      <nav className="daily-training-step-tabs" aria-label="学习进度">
-        {steps.map((step) => (
-          <button
-            aria-current={activeStep === step.key ? "step" : undefined}
-            className="daily-training-step-tab"
-            key={step.key}
-            type="button"
-            onClick={() => onStepChange(step.key)}
-          >
-            <span>{training.stepStatus[step.key] ? <CheckCircle2 size={16} /> : step.title}</span>
-            <strong>{step.label}</strong>
-          </button>
-        ))}
-      </nav>
+    <section className="daily-lesson-shell">
+      <LessonHeader
+        isGenerating={isGenerating}
+        menuOpen={menuOpen}
+        progress={progress}
+        training={training}
+        onMenuToggle={onMenuToggle}
+        onRegenerate={onRegenerate}
+      />
+      {error ? <p className="daily-lesson-error">{error}</p> : null}
+
+      <section className="daily-lesson-video-block">
+        <div className="daily-lesson-player">
+          <EmbeddedPlayer
+            key={`${training.listening.resource.embedUrl ?? training.listening.resource.url}-${playerSeed}`}
+            activeSegment={activeSegment}
+            mediaRef={mediaRef}
+            resource={training.listening.resource}
+            onTimeUpdate={handleTimeUpdate}
+          />
+        </div>
+        <div className="daily-lesson-resource-line">
+          <strong>{training.listening.resource.title}</strong>
+          <span>{training.listening.resource.source}</span>
+          <span>{training.listening.resource.duration}</span>
+          <span>{training.listening.resource.level}</span>
+          <a href={training.listening.resource.url} target="_blank" rel="noreferrer" title="原始资源">
+            <ExternalLink size={16} aria-hidden="true" />
+          </a>
+        </div>
+      </section>
+
+      <TranscriptPanel
+        activeSegmentId={activeSegmentId}
+        learningItems={training.learningItems}
+        loopSegmentId={loopSegmentId}
+        segments={training.transcriptSegments}
+        transcriptSource={training.transcriptSource}
+        onLoop={(segment) => {
+          setLoopSegmentId((current) => (current === segment.id ? null : segment.id));
+          seekTo(segment);
+        }}
+        onSeek={seekTo}
+        onToggleUnclear={toggleUnclear}
+      />
+
+      <LearningItemsPanel
+        items={training.learningItems}
+        onPlaySentence={(item) => {
+          const segment = findSegmentByTime(training.transcriptSegments, item.sourceStartTime);
+          if (segment) {
+            seekTo(segment);
+          }
+        }}
+        onUpdateItem={(itemId, updates) =>
+          onUpdate((draft) => ({
+            ...draft,
+            learningItems: draft.learningItems.map((item) =>
+              item.id === itemId ? { ...item, ...updates } : item
+            )
+          }))
+        }
+      />
+
+      <DictationPanel
+        exercises={training.dictation}
+        segments={training.transcriptSegments}
+        onPlaySegment={seekTo}
+        onUpdate={(dictation) => onUpdate((draft) => ({ ...draft, dictation }))}
+      />
+
+      <ShadowingPanel
+        shadowing={training.shadowing}
+        segments={training.transcriptSegments}
+        onPlaySegment={seekTo}
+        onUpdate={(shadowing) => onUpdate((draft) => ({ ...draft, shadowing }))}
+      />
+
+      <ComprehensionPanel
+        questions={training.comprehension}
+        onUpdate={(comprehension) => onUpdate((draft) => ({ ...draft, comprehension }))}
+      />
+
+      <OutputPanel
+        learningItems={training.learningItems}
+        outputTask={training.outputTask}
+        topic={training.topic}
+        onUpdate={(outputTask) => onUpdate((draft) => ({ ...draft, outputTask }))}
+      />
+
+      <CompleteLessonPanel
+        review={training.lessonReview}
+        completed={training.completed}
+        onAddReview={() =>
+          onUpdate((draft) => ({
+            ...draft,
+            lessonReview: { ...draft.lessonReview, addedToReview: true },
+            review: mergeReviewItems(draft.review, draft.learningItems.slice(0, 3))
+          }))
+        }
+        onComplete={() =>
+          onUpdate((draft) => ({
+            ...draft,
+            completed: true,
+            stepStatus: {
+              listening: true,
+              expression: true,
+              practice: true,
+              speaking: true,
+              review: true
+            }
+          }))
+        }
+      />
     </section>
   );
 }
 
-function ListeningStep({
-  onDone,
+function LessonHeader({
+  isGenerating,
+  menuOpen,
+  onMenuToggle,
+  onRegenerate,
+  progress,
   training
 }: {
-  onDone: () => void;
+  isGenerating: boolean;
+  menuOpen: boolean;
+  onMenuToggle: () => void;
+  onRegenerate: () => void;
+  progress: number;
   training: DailyTraining;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
-  const [loop, setLoop] = useState(false);
-  const [speed, setSpeed] = useState(1);
-  const resource = training.listening.resource;
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = speed;
-    }
-  }, [speed]);
-
-  useEffect(() => {
-    setShowTranscript(false);
-    setLoop(false);
-    setSpeed(1);
-  }, [resource.url, resource.embedUrl]);
-
   return (
-    <StepPanel eyebrow="Step 1" title="Listening Input" actionLabel="我听完了，进入表达库" onAction={onDone}>
-      <div className="daily-training-player-layout">
-        <div className="daily-training-player">
-          {resource.playerType === "bilibili" && resource.embedUrl ? (
-            <iframe
-              allow="autoplay; fullscreen; picture-in-picture"
-              allowFullScreen
-              scrolling="no"
-              src={resource.embedUrl}
-              title={resource.title}
-            />
-          ) : null}
-          {resource.playerType === "youtube" && resource.embedUrl ? (
-            <iframe
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              src={resource.embedUrl}
-              title={resource.title}
-            />
-          ) : null}
-          {resource.playerType === "audio" && resource.audioUrl ? (
-            <audio ref={audioRef} controls loop={loop} src={resource.audioUrl}>
-              你的浏览器不支持音频播放。
-            </audio>
-          ) : null}
-          {resource.playerType === "web" || (!resource.embedUrl && !resource.audioUrl) ? (
-            <iframe src={resource.url} title={resource.title} />
-          ) : null}
+    <header className="daily-lesson-header">
+      <div>
+        <span className="daily-lesson-kicker">Day {training.dayNumber}</span>
+        <h1>{training.topic}</h1>
+        <div className="daily-lesson-meta">
+          <span>{training.listening.resource.level}</span>
+          <span>{training.listening.resource.duration}</span>
+          <span>{progress}% complete</span>
         </div>
-        <div className="daily-training-resource-summary">
-          <span>{resource.source}</span>
-          <h3>{resource.title}</h3>
-          <p>{resource.whySuitable}</p>
-          <div className="daily-training-tag-row">
-            <span>{resource.level}</span>
-            <span>{resource.duration}</span>
+      </div>
+      <div className="daily-lesson-menu-wrap">
+        <button className="daily-lesson-icon-btn" type="button" onClick={onMenuToggle}>
+          <MoreHorizontal size={20} aria-hidden="true" />
+        </button>
+        {menuOpen ? (
+          <div className="daily-lesson-menu">
+            <button disabled={isGenerating} type="button" onClick={onRegenerate}>
+              {isGenerating ? <Loader2 className="daily-training-spin" size={16} /> : <RotateCcw size={16} />}
+              重新生成课程
+            </button>
+            <a href={training.listening.resource.url} target="_blank" rel="noreferrer">
+              <ExternalLink size={16} />
+              查看原始资源
+            </a>
+            <Link href="/daily-training">返回训练记录</Link>
           </div>
-          <a href={resource.url} target="_blank" rel="noreferrer">
-            原始资源
-            <ExternalLink size={15} aria-hidden="true" />
-          </a>
-        </div>
+        ) : null}
       </div>
-
-      <div className="daily-training-controls">
-        <button
-          aria-pressed={showTranscript}
-          className="daily-training-ghost"
-          type="button"
-          onClick={() => setShowTranscript((value) => !value)}
-        >
-          字幕 / 文本
-        </button>
-        <button
-          aria-pressed={loop}
-          className="daily-training-ghost"
-          type="button"
-          onClick={() => setLoop((value) => !value)}
-        >
-          循环
-        </button>
-        {[0.75, 1, 1.25].map((rate) => (
-          <button
-            aria-pressed={speed === rate}
-            className="daily-training-ghost"
-            key={rate}
-            type="button"
-            onClick={() => setSpeed(rate)}
-          >
-            {rate}x
-          </button>
-        ))}
-      </div>
-
-      <div className="daily-training-task-strip">
-        <TaskNote title="第一遍">{training.listening.firstListen.instruction}</TaskNote>
-        <TaskNote title="抓大意">{training.listening.firstListen.questions.join(" / ")}</TaskNote>
-        <TaskNote title="第二遍">{training.listening.secondListen.task}</TaskNote>
-      </div>
-
-      {showTranscript ? (
-        <div className="daily-training-transcript">
-          {training.listening.transcript || "这个资源没有提供可直接展示的字幕，请使用播放器字幕或浏览器翻译插件辅助。"}
-        </div>
-      ) : null}
-    </StepPanel>
+    </header>
   );
 }
 
-function ExpressionStep({
-  expressions,
-  onDone,
-  onUpdateExpression
+function EmbeddedPlayer({
+  activeSegment,
+  mediaRef,
+  onTimeUpdate,
+  resource
 }: {
-  expressions: TrainingExpression[];
-  onDone: () => void;
-  onUpdateExpression: (
-    expressionId: string,
-    updates: Partial<Pick<TrainingExpression, "favorite" | "mastery">>
-  ) => void;
+  activeSegment?: TranscriptSegment;
+  mediaRef: React.MutableRefObject<HTMLVideoElement | HTMLAudioElement | null>;
+  onTimeUpdate: () => void;
+  resource: DailyTraining["listening"]["resource"];
+}) {
+  const timedEmbedUrl = appendStartTime(resource.embedUrl, activeSegment?.startTime);
+
+  if (resource.playerType === "bilibili" && resource.embedUrl) {
+    return (
+      <iframe
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+        scrolling="no"
+        src={timedEmbedUrl}
+        title={resource.title}
+      />
+    );
+  }
+
+  if (resource.playerType === "youtube" && resource.embedUrl) {
+    return (
+      <iframe
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+        src={timedEmbedUrl}
+        title={resource.title}
+      />
+    );
+  }
+
+  if (resource.playerType === "audio" && resource.audioUrl) {
+    return (
+      <audio
+        ref={(node) => {
+          mediaRef.current = node;
+        }}
+        controls
+        src={resource.audioUrl}
+        onTimeUpdate={onTimeUpdate}
+      />
+    );
+  }
+
+  return <iframe src={resource.url} title={resource.title} />;
+}
+
+function TranscriptPanel({
+  activeSegmentId,
+  learningItems,
+  loopSegmentId,
+  onLoop,
+  onSeek,
+  onToggleUnclear,
+  segments,
+  transcriptSource
+}: {
+  activeSegmentId: string;
+  learningItems: LearningItem[];
+  loopSegmentId: string | null;
+  onLoop: (segment: TranscriptSegment) => void;
+  onSeek: (segment: TranscriptSegment) => void;
+  onToggleUnclear: (segment: TranscriptSegment) => void;
+  segments: TranscriptSegment[];
+  transcriptSource: DailyTraining["transcriptSource"];
+}) {
+  const [query, setQuery] = useState("");
+  const [speaker, setSpeaker] = useState("all");
+  const [showChinese, setShowChinese] = useState(false);
+  const speakers = useMemo(
+    () => Array.from(new Set(segments.map((segment) => segment.speaker))).filter(Boolean),
+    [segments]
+  );
+  const filteredSegments = segments.filter((segment) => {
+    const matchesQuery = [segment.text, segment.translation, segment.speaker]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(query.toLowerCase());
+    const matchesSpeaker = speaker === "all" || segment.speaker === speaker;
+    return matchesQuery && matchesSpeaker;
+  });
+
+  return (
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>同步逐句转录</h2>
+        <span>{transcriptSource === "unavailable" ? "字幕不可用" : `${segments.length} 句`}</span>
+      </div>
+      <div className="daily-lesson-transcript-tools">
+        <label>
+          <Search size={16} aria-hidden="true" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索转录文本" />
+        </label>
+        <select value={speaker} onChange={(event) => setSpeaker(event.target.value)}>
+          <option value="all">全部说话人</option>
+          {speakers.map((item) => (
+            <option value={item} key={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={() => setShowChinese((value) => !value)}>
+          {showChinese ? "只显示英文" : "显示中文"}
+        </button>
+      </div>
+      {segments.length === 0 ? (
+        <div className="daily-lesson-empty-note">
+          当前资源没有可验证逐句字幕，不能用于精听。请通过更多菜单重新生成课程。
+        </div>
+      ) : (
+        <div className="daily-lesson-transcript-list">
+          {filteredSegments.map((segment) => (
+            <article
+              className="daily-lesson-segment"
+              data-active={segment.id === activeSegmentId}
+              key={segment.id}
+              onClick={() => onSeek(segment)}
+            >
+              <div className="daily-lesson-segment-top">
+                <button type="button" onClick={(event) => stopAndRun(event, () => onSeek(segment))}>
+                  {formatTime(segment.startTime)}
+                </button>
+                <strong>{segment.speaker}</strong>
+                {segment.markedUnclear ? <span>已加入精听</span> : null}
+              </div>
+              <p>{renderLearningText(segment.text, learningItems)}</p>
+              {showChinese && segment.translation ? <small>{segment.translation}</small> : null}
+              <div className="daily-lesson-segment-actions">
+                <button type="button" onClick={(event) => stopAndRun(event, () => onToggleUnclear(segment))}>
+                  <XCircle size={15} />
+                  没听清
+                </button>
+                <button type="button" onClick={(event) => stopAndRun(event, () => onLoop(segment))}>
+                  <RotateCcw size={15} />
+                  {loopSegmentId === segment.id ? "停止循环" : "循环本句"}
+                </button>
+                <button type="button" onClick={(event) => stopAndRun(event, () => onSeek(segment))}>
+                  <Volume2 size={15} />
+                  跟读
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LearningItemsPanel({
+  items,
+  onPlaySentence,
+  onUpdateItem
+}: {
+  items: LearningItem[];
+  onPlaySentence: (item: LearningItem) => void;
+  onUpdateItem: (itemId: string, updates: Partial<LearningItem>) => void;
 }) {
   return (
-    <StepPanel eyebrow="Step 2" title="Expression Bank" actionLabel="表达过一遍了，去练习" onAction={onDone}>
-      <div className="daily-training-expression-list">
-        {expressions.map((item) => (
-          <article className="daily-training-expression-row" key={item.id}>
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>本课值得学的词和表达</h2>
+        <span>{items.length} 项</span>
+      </div>
+      <div className="daily-lesson-learning-list">
+        {items.map((item) => (
+          <article className="daily-lesson-learning-item" key={item.id}>
             <div>
-              <h3>{item.expression}</h3>
+              <span>{getLearningTypeLabel(item.type)}</span>
+              <h3>{item.text}</h3>
               <p>{item.meaning}</p>
-              <small>{item.scenario} · {item.pronunciation}</small>
-              <q>{item.example}</q>
+              <small>{item.pronunciation}</small>
             </div>
-            <div className="daily-training-expression-actions">
-              <button
-                className="daily-training-icon-button"
-                type="button"
-                title="朗读"
-                onClick={() => speak(item.expression)}
-              >
-                <Volume2 size={17} />
+            <p className="daily-lesson-source-sentence">{item.sourceSentence}</p>
+            <div className="daily-lesson-chip-row">
+              {item.collocations.map((collocation) => (
+                <span key={collocation}>{collocation}</span>
+              ))}
+            </div>
+            <q>{item.reusableExample}</q>
+            <div className="daily-lesson-learning-actions">
+              <button type="button" onClick={() => onPlaySentence(item)}>
+                <Play size={15} />
+                播放原句
               </button>
-              <button
-                className="daily-training-icon-button"
-                type="button"
-                title={item.favorite ? "取消收藏" : "收藏"}
-                onClick={() => onUpdateExpression(item.id, { favorite: !item.favorite })}
-              >
-                {item.favorite ? <BookmarkCheck size={17} /> : <Bookmark size={17} />}
+              <button type="button" onClick={() => onUpdateItem(item.id, { saved: !item.saved })}>
+                {item.saved ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+                {item.saved ? "已收藏" : "收藏"}
               </button>
-              <MasteryControl
+              <select
                 value={item.mastery}
-                onChange={(mastery) => onUpdateExpression(item.id, { mastery })}
-              />
+                onChange={(event) =>
+                  onUpdateItem(item.id, { mastery: event.target.value as LearningItemMastery })
+                }
+              >
+                {Object.entries(masteryLabels).map(([key, label]) => (
+                  <option value={key} key={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </div>
           </article>
         ))}
       </div>
-    </StepPanel>
+    </section>
   );
 }
 
-function PracticeStep({
-  onDone,
-  training
+function DictationPanel({
+  exercises,
+  onPlaySegment,
+  onUpdate,
+  segments
 }: {
-  onDone: () => void;
-  training: DailyTraining;
+  exercises: DictationExercise[];
+  onPlaySegment: (segment: TranscriptSegment) => void;
+  onUpdate: (exercises: DictationExercise[]) => void;
+  segments: TranscriptSegment[];
 }) {
-  const [fillAnswers, setFillAnswers] = useState<Record<string, string>>({});
-  const [replacementAnswers, setReplacementAnswers] = useState<Record<string, string>>({});
-  const [builderAnswers, setBuilderAnswers] = useState<Record<string, string>>({});
-  const [checked, setChecked] = useState(false);
-
-  useEffect(() => {
-    setFillAnswers({});
-    setReplacementAnswers({});
-    setBuilderAnswers({});
-    setChecked(false);
-  }, [training.practice]);
+  function updateExercise(segmentId: string, updates: Partial<DictationExercise>) {
+    onUpdate(
+      exercises.map((exercise) =>
+        exercise.segmentId === segmentId ? { ...exercise, ...updates } : exercise
+      )
+    );
+  }
 
   return (
-    <StepPanel eyebrow="Step 3" title="Practice Module" actionLabel="练习完成，去口语输出" onAction={onDone}>
-      <section className="daily-training-practice-block">
-        <h3>A. Fill Blank</h3>
-        {training.practice.fillBlank.map((item) => (
-          <label className="daily-training-inline-task" key={item.id}>
-            <span>{item.prompt}</span>
-            <input
-              value={fillAnswers[item.id] ?? ""}
-              onChange={(event) =>
-                setFillAnswers((answers) => ({ ...answers, [item.id]: event.target.value }))
-              }
-              placeholder={item.hint ?? "填入缺失表达"}
-            />
-            {checked ? (
-              <small>{isSameAnswer(fillAnswers[item.id], item.answer) ? "正确" : `参考：${item.answer}`}</small>
-            ) : null}
-          </label>
-        ))}
-      </section>
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>精听训练</h2>
+        <span>3-5 句</span>
+      </div>
+      <div className="daily-lesson-dictation-list">
+        {exercises.map((exercise, index) => {
+          const segment = segments.find((item) => item.id === exercise.segmentId);
+          const diff = compareWords(exercise.userAnswer, exercise.correctText);
 
-      <section className="daily-training-practice-block">
-        <h3>B. Expression Replacement</h3>
-        {training.practice.replacements.map((item) => (
-          <div className="daily-training-replacement" key={item.id}>
-            <p>{item.baseSentence}</p>
-            <div className="daily-training-tag-row">
-              {item.replacements.map((replacement) => (
-                <span key={replacement}>{item.targetWord} → {replacement}</span>
-              ))}
-            </div>
-            <textarea
-              value={replacementAnswers[item.id] ?? ""}
-              onChange={(event) =>
-                setReplacementAnswers((answers) => ({ ...answers, [item.id]: event.target.value }))
-              }
-              placeholder="把句子迁移到新场景里"
-              rows={3}
-            />
-            {checked ? <small>参考：{item.modelAnswer}</small> : null}
-          </div>
-        ))}
-      </section>
-
-      <section className="daily-training-practice-block">
-        <h3>C. Sentence Builder</h3>
-        {training.practice.sentenceBuilders.map((item) => (
-          <div className="daily-training-replacement" key={item.id}>
-            <p>{item.context}</p>
-            <div className="daily-training-tag-row">
-              {item.keywords.map((keyword) => (
-                <span key={keyword}>{keyword}</span>
-              ))}
-            </div>
-            <textarea
-              value={builderAnswers[item.id] ?? ""}
-              onChange={(event) =>
-                setBuilderAnswers((answers) => ({ ...answers, [item.id]: event.target.value }))
-              }
-              placeholder="用这些关键词说成一句自然英文"
-              rows={3}
-            />
-            {checked ? <small>参考：{item.modelAnswer}</small> : null}
-          </div>
-        ))}
-      </section>
-
-      <button className="daily-training-ghost" type="button" onClick={() => setChecked(true)}>
-        查看参考答案
-      </button>
-    </StepPanel>
+          return (
+            <article className="daily-lesson-dictation" key={exercise.segmentId}>
+              <div className="daily-lesson-dictation-top">
+                <strong>句子 {index + 1}</strong>
+                {segment ? (
+                  <button type="button" onClick={() => onPlaySegment(segment)}>
+                    <Play size={15} />
+                    播放原句
+                  </button>
+                ) : null}
+              </div>
+              <textarea
+                value={exercise.userAnswer}
+                onChange={(event) =>
+                  updateExercise(exercise.segmentId, {
+                    userAnswer: event.target.value,
+                    completed: false
+                  })
+                }
+                placeholder="先听声音，再输入你听到的英文"
+                rows={3}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  updateExercise(exercise.segmentId, {
+                    completed: true,
+                    missingWords: diff.missingWords,
+                    incorrectWords: diff.incorrectWords
+                  })
+                }
+              >
+                显示对比
+              </button>
+              {exercise.completed ? (
+                <div className="daily-lesson-diff">
+                  <p>
+                    正确：<strong>{exercise.correctText}</strong>
+                  </p>
+                  <p>漏词：{exercise.missingWords.join(" / ") || "无"}</p>
+                  <p>错词：{exercise.incorrectWords.join(" / ") || "无"}</p>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
-function SpeakingStep({
-  onDone,
-  onFeedback,
-  training
+function ShadowingPanel({
+  onPlaySegment,
+  onUpdate,
+  segments,
+  shadowing
 }: {
-  onDone: () => void;
-  onFeedback: (answer: string, feedback: SpeakingFeedback) => void;
-  training: DailyTraining;
+  onPlaySegment: (segment: TranscriptSegment) => void;
+  onUpdate: (shadowing: DailyTraining["shadowing"]) => void;
+  segments: TranscriptSegment[];
+  shadowing: DailyTraining["shadowing"];
 }) {
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const [answer, setAnswer] = useState(training.speaking.answer ?? "");
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [feedback, setFeedback] = useState<SpeakingFeedback | undefined>(training.speaking.feedback);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [recordingSegmentId, setRecordingSegmentId] = useState<string | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const selectedSegments = shadowing.segmentIds
+    .map((segmentId) => segments.find((segment) => segment.id === segmentId))
+    .filter((segment): segment is TranscriptSegment => !!segment);
 
-  useEffect(() => {
-    setAnswer(training.speaking.answer ?? "");
-    setAudioUrl(null);
-    setRecording(false);
-    setFeedback(training.speaking.feedback);
-    setError(null);
-  }, [training.speaking.question, training.speaking.answer, training.speaking.feedback]);
+  async function toggleRecording(segmentId: string) {
+    if (recordingSegmentId === segmentId) {
+      recorderRef.current?.stop();
+      setRecordingSegmentId(null);
+      return;
+    }
+
+    let stream: MediaStream;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setRecordingError(null);
+    } catch {
+      setRecordingError("没有获得麦克风权限。可以先播放原句，自行跟读对比。");
+      return;
+    }
+
+    const recorder = new MediaRecorder(stream);
+    chunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data);
+      }
+    };
+    recorder.onstop = () => {
+      const url = URL.createObjectURL(new Blob(chunksRef.current, { type: "audio/webm" }));
+      stream.getTracks().forEach((track) => track.stop());
+      onUpdate({
+        ...shadowing,
+        recordings: { ...shadowing.recordings, [segmentId]: url },
+        completed: true
+      });
+    };
+    recorder.start();
+    recorderRef.current = recorder;
+    setRecordingSegmentId(segmentId);
+  }
+
+  return (
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>逐句跟读</h2>
+        <span>听一句，录一句</span>
+      </div>
+      {recordingError ? <p className="daily-lesson-error">{recordingError}</p> : null}
+      <div className="daily-lesson-shadowing-list">
+        {selectedSegments.map((segment) => (
+          <article key={segment.id}>
+            <p>{segment.text}</p>
+            <div className="daily-lesson-learning-actions">
+              <button type="button" onClick={() => onPlaySegment(segment)}>
+                <Play size={15} />
+                播放原句
+              </button>
+              <button type="button" onClick={() => void toggleRecording(segment.id)}>
+                <Mic size={15} />
+                {recordingSegmentId === segment.id ? "停止录音" : "开始录音"}
+              </button>
+              {shadowing.recordings[segment.id] ? (
+                <audio controls src={shadowing.recordings[segment.id]} />
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ComprehensionPanel({
+  onUpdate,
+  questions
+}: {
+  onUpdate: (questions: ComprehensionQuestion[]) => void;
+  questions: ComprehensionQuestion[];
+}) {
+  if (questions.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>理解检查</h2>
+        <span>2-3 题</span>
+      </div>
+      <div className="daily-lesson-question-list">
+        {questions.map((question) => (
+          <article key={question.id}>
+            <h3>{question.question}</h3>
+            <div className="daily-lesson-options">
+              {question.options.map((option) => (
+                <button
+                  data-selected={question.userAnswer === option}
+                  key={option}
+                  type="button"
+                  onClick={() =>
+                    onUpdate(
+                      questions.map((item) =>
+                        item.id === question.id
+                          ? { ...item, userAnswer: option, completed: true }
+                          : item
+                      )
+                    )
+                  }
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            {question.completed ? (
+              <p className="daily-lesson-answer">
+                答案：{question.answer}。{question.explanation}
+              </p>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OutputPanel({
+  learningItems,
+  onUpdate,
+  outputTask,
+  topic
+}: {
+  learningItems: LearningItem[];
+  onUpdate: (task: DailyTraining["outputTask"]) => void;
+  outputTask: DailyTraining["outputTask"];
+  topic: string;
+}) {
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const requiredItems = outputTask.requiredItemIds
+    .map((itemId) => learningItems.find((item) => item.id === itemId))
+    .filter((item): item is LearningItem => !!item);
 
   async function toggleRecording() {
     if (recording) {
-      mediaRecorderRef.current?.stop();
+      recorderRef.current?.stop();
       setRecording(false);
       return;
     }
 
+    let stream: MediaStream;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        setAudioUrl(URL.createObjectURL(blob));
-        stream.getTracks().forEach((track) => track.stop());
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setRecording(true);
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setRecordingError(null);
     } catch {
-      setError("浏览器没有拿到麦克风权限。你也可以直接把回答打在下面。");
+      setRecordingError("没有获得麦克风权限。你也可以直接写下自己的口语转录。");
+      return;
     }
+
+    const recorder = new MediaRecorder(stream);
+    chunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data);
+      }
+    };
+    recorder.onstop = () => {
+      const url = URL.createObjectURL(new Blob(chunksRef.current, { type: "audio/webm" }));
+      stream.getTracks().forEach((track) => track.stop());
+      onUpdate({ ...outputTask, recordingUrl: url });
+    };
+    recorder.start();
+    recorderRef.current = recorder;
+    setRecording(true);
   }
 
-  async function submitSpeaking() {
-    if (!answer.trim()) {
-      setError("请先写下你刚才说的英文，AI 才能分析。");
+  async function requestFeedback() {
+    if (!outputTask.transcript?.trim()) {
+      onUpdate({ ...outputTask, feedback: "请先写下或粘贴你的口语转录，再查看基础反馈。" });
       return;
     }
 
     setLoading(true);
-    setError(null);
 
     try {
       const response = await fetch("/api/daily-training/speaking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          answer,
-          question: training.speaking.question,
-          topic: training.topic,
-          expressions: training.expressions.map((item) => item.expression)
+          answer: outputTask.transcript,
+          question: outputTask.prompt,
+          topic,
+          expressions: requiredItems.map((item) => item.text)
         })
       });
       const payload = (await response.json().catch(() => ({}))) as SpeakingFeedbackApiResponse;
 
-      if (!response.ok || !payload.feedback) {
-        throw new Error(payload.error ?? "口语反馈生成失败，请稍后重试。");
-      }
-
-      setFeedback(payload.feedback);
-      onFeedback(answer.trim(), payload.feedback);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "口语反馈生成失败，请稍后重试。");
+      onUpdate({
+        ...outputTask,
+        feedback: payload.feedback?.suggestion ?? payload.error ?? "反馈生成失败，请稍后重试。",
+        completed: true
+      });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <StepPanel eyebrow="Step 4" title="Speaking Practice" actionLabel="完成口语，进入复习" onAction={onDone}>
-      <div className="daily-training-speaking-prompt">
-        <span>今日口语题</span>
-        <h3>{training.speaking.question}</h3>
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>当日输出任务</h2>
+        <span>30-60 秒</span>
       </div>
-      <div className="daily-training-controls">
-        <button className="daily-training-primary" type="button" onClick={() => void toggleRecording()}>
-          {recording ? <Pause size={17} /> : <Mic size={17} />}
-          {recording ? "停止录音" : "开始录音"}
-        </button>
-        {audioUrl ? (
-          <audio controls src={audioUrl}>
-            你的浏览器不支持音频播放。
-          </audio>
-        ) : null}
-      </div>
-      <label className="daily-training-answer-box">
-        <span>把你说的英文写在这里，提交给 AI 口语教练分析</span>
-        <textarea
-          value={answer}
-          onChange={(event) => setAnswer(event.target.value)}
-          placeholder="例如：I am responsible for keeping the team updated..."
-          rows={5}
-        />
-      </label>
-      <button className="daily-training-primary" disabled={loading} type="button" onClick={() => void submitSpeaking()}>
-        {loading ? <Loader2 className="daily-training-spin" size={17} /> : <Sparkles size={17} />}
-        AI 分析口语
-      </button>
-      {error ? <p className="daily-training-error">{error}</p> : null}
-      {feedback ? <SpeakingFeedbackPanel feedback={feedback} /> : null}
-    </StepPanel>
-  );
-}
-
-function ReviewStep({
-  onDone,
-  onUpdateReview,
-  training,
-  trainingVersion
-}: {
-  onDone: () => void;
-  onUpdateReview: (review: ReviewItem[]) => void;
-  training: DailyTraining;
-  trainingVersion: string;
-}) {
-  const [items, setItems] = useState(training.review);
-
-  useEffect(() => {
-    setItems(training.review);
-  }, [training.review, trainingVersion]);
-
-  function updateItem(expressionId: string, updates: Partial<ReviewItem>) {
-    const nextItems = items.map((item) =>
-      item.expressionId === expressionId ? { ...item, ...updates } : item
-    );
-    setItems(nextItems);
-    onUpdateReview(nextItems);
-  }
-
-  return (
-    <StepPanel
-      eyebrow="Step 5"
-      title="Today's Review"
-      actionLabel={training.completed ? "今日已完成" : "完成今日训练"}
-      actionDisabled={training.completed}
-      onAction={onDone}
-    >
-      {training.completed ? (
-        <div className="daily-training-complete-note">
-          <CheckCircle2 size={18} aria-hidden="true" />
-          <span>今日训练已完成，记录已保存到本地。</span>
+      <div className="daily-lesson-output">
+        <p>{outputTask.prompt}</p>
+        <div className="daily-lesson-chip-row">
+          {requiredItems.map((item) => (
+            <span key={item.id}>{item.text}</span>
+          ))}
         </div>
-      ) : null}
-      <div className="daily-training-reading-card">
-        <span>Daily Reading Card</span>
-        <h3>{training.reading.title}</h3>
-        <p className="daily-training-muted">
-          {training.reading.source} · {training.reading.level}
-        </p>
-        <p>{renderReadingText(training.reading.text, training.reading.highlightedExpressions)}</p>
-        <div className="daily-training-zh-assist">{training.reading.zhAssist}</div>
-        <a href={training.reading.url} target="_blank" rel="noreferrer">
-          阅读来源
-          <ExternalLink size={15} aria-hidden="true" />
-        </a>
-      </div>
-
-      <div className="daily-training-review-list">
-        {items.map((item) => (
-          <article className="daily-training-review-item" key={item.expressionId}>
-            <div>
-              <h3>{item.expression}</h3>
-              <p>{item.meaning}</p>
-              <small>{item.prompt}</small>
-            </div>
-            <textarea
-              value={item.userSentence ?? ""}
-              onChange={(event) =>
-                updateItem(item.expressionId, { userSentence: event.target.value })
-              }
-              placeholder="用这个表达重新造一句自己的话"
-              rows={3}
-            />
-            <div className="daily-training-controls">
-              <button
-                aria-pressed={item.correct === true}
-                className="daily-training-ghost"
-                type="button"
-                onClick={() => updateItem(item.expressionId, { correct: true })}
-              >
-                会用了
-              </button>
-              <button
-                aria-pressed={item.correct === false}
-                className="daily-training-ghost"
-                type="button"
-                onClick={() => updateItem(item.expressionId, { correct: false })}
-              >
-                还不熟
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </StepPanel>
-  );
-}
-
-function SpeakingFeedbackPanel({ feedback }: { feedback: SpeakingFeedback }) {
-  return (
-    <div className="daily-training-feedback">
-      <div className="daily-training-score-row">
-        <Metric label="Fluency" value={`${feedback.fluency}`} />
-        <Metric label="Grammar" value={`${feedback.grammar}`} />
-        <Metric label="Vocabulary" value={`${feedback.vocabulary}`} />
-        <Metric label="Naturalness" value={`${feedback.naturalness}`} />
-      </div>
-      <p>{feedback.suggestion}</p>
-      <q>{feedback.betterVersion}</q>
-    </div>
-  );
-}
-
-function MasteryControl({
-  onChange,
-  value
-}: {
-  onChange: (value: ExpressionMastery) => void;
-  value: ExpressionMastery;
-}) {
-  const options: { key: ExpressionMastery; label: string }[] = [
-    { key: "new", label: "新学" },
-    { key: "learning", label: "练习中" },
-    { key: "mastered", label: "掌握" }
-  ];
-
-  return (
-    <div className="daily-training-mastery" aria-label="掌握程度">
-      {options.map((option) => (
-        <button
-          aria-pressed={value === option.key}
-          key={option.key}
-          type="button"
-          onClick={() => onChange(option.key)}
-        >
-          {option.label}
+        {recordingError ? <p className="daily-lesson-error">{recordingError}</p> : null}
+        <div className="daily-lesson-learning-actions">
+          <button type="button" onClick={() => void toggleRecording()}>
+            <Mic size={15} />
+            {recording ? "停止录音" : "开始录音"}
+          </button>
+          {outputTask.recordingUrl ? <audio controls src={outputTask.recordingUrl} /> : null}
+        </div>
+        <textarea
+          value={outputTask.transcript ?? ""}
+          onChange={(event) => onUpdate({ ...outputTask, transcript: event.target.value })}
+          placeholder="查看转录：可以手动写下你刚才说的内容"
+          rows={4}
+        />
+        <button disabled={loading} type="button" onClick={() => void requestFeedback()}>
+          {loading ? <Loader2 className="daily-training-spin" size={15} /> : <Sparkles size={15} />}
+          查看基础反馈
         </button>
-      ))}
-    </div>
+        {outputTask.feedback ? <p className="daily-lesson-answer">{outputTask.feedback}</p> : null}
+      </div>
+    </section>
   );
 }
 
-function StepPanel({
-  actionLabel,
-  actionDisabled = false,
-  children,
-  eyebrow,
-  onAction,
-  title
+function CompleteLessonPanel({
+  completed,
+  onAddReview,
+  onComplete,
+  review
 }: {
-  actionLabel: string;
-  actionDisabled?: boolean;
-  children: ReactNode;
-  eyebrow: string;
-  onAction: () => void;
-  title: string;
+  completed: boolean;
+  onAddReview: () => void;
+  onComplete: () => void;
+  review: DailyTraining["lessonReview"];
 }) {
   return (
-    <section className="daily-training-step-panel">
-      <div className="daily-training-step-heading">
-        <span>{eyebrow}</span>
-        <h2>{title}</h2>
+    <section className="daily-lesson-section daily-lesson-complete">
+      <div className="daily-lesson-section-head">
+        <h2>Today you learned</h2>
+        {completed ? <span>已完成</span> : null}
       </div>
-      {children}
-      <div className="daily-training-step-footer">
-        <button
-          className="daily-training-primary"
-          disabled={actionDisabled}
-          type="button"
-          onClick={onAction}
-        >
-          {actionLabel}
-          <ChevronRight size={17} aria-hidden="true" />
+      <ul>
+        <li>3 个重点表达：{review.expressions.join(" / ") || "完成学习项后生成"}</li>
+        <li>2 个声音现象：{review.soundIssues.join(" / ") || "跟读时注意弱读和连读"}</li>
+        <li>1 个复习句子：{review.reviewSentence}</li>
+      </ul>
+      <div className="daily-lesson-learning-actions">
+        <button type="button" onClick={onAddReview}>
+          {review.addedToReview ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+          {review.addedToReview ? "已加入复习" : "加入复习"}
+        </button>
+        <button className="daily-lesson-primary" disabled={completed} type="button" onClick={onComplete}>
+          <CheckCircle2 size={15} />
+          {completed ? "本课已完成" : "完成本课"}
         </button>
       </div>
     </section>
   );
 }
 
-function Panel({
-  children,
-  icon,
-  title
-}: {
-  children: ReactNode;
-  icon: ReactNode;
-  title: string;
-}) {
-  return (
-    <section className="daily-training-side-panel">
-      <div className="daily-training-card-head">
-        {icon}
-        <h2>{title}</h2>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function TaskNote({ children, title }: { children: ReactNode; title: string }) {
-  return (
-    <article>
-      <strong>{title}</strong>
-      <p>{children}</p>
-    </article>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="daily-training-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function WeaknessList({ training }: { training: DailyTraining | null }) {
-  if (!training) {
-    return <p className="daily-training-muted">生成训练后会看到今日重点。</p>;
-  }
-
-  const items = [
-    ...training.weaknesses.listening,
-    ...training.weaknesses.expression,
-    ...training.weaknesses.speaking,
-    ...training.weaknesses.reading
-  ].slice(0, 6);
-
-  return (
-    <div className="daily-training-tag-row">
-      {items.map((item) => (
-        <span key={item}>{item}</span>
-      ))}
-    </div>
-  );
-}
-
-function EmptyTrainingState({
+function EmptyLesson({
+  aiConfigured,
+  error,
   isGenerating,
   onGenerate
 }: {
+  aiConfigured: boolean | null;
+  error: string | null;
   isGenerating: boolean;
   onGenerate: () => void;
 }) {
   return (
-    <section className="daily-training-empty daily-training-flow-empty">
+    <section className="daily-lesson-empty">
       <span>Daily English Training</span>
-      <h2>今天只做一轮完整训练</h2>
-      <p>
-        系统会通过 AI agent 寻找真实输入资源，然后按听力输入、表达积累、主动练习、口语输出和间隔复习生成任务。
-      </p>
-      <button
-        className="daily-training-primary"
-        disabled={isGenerating}
-        type="button"
-        onClick={onGenerate}
-      >
-        {isGenerating ? (
-          <Loader2 className="daily-training-spin" size={17} aria-hidden="true" />
-        ) : (
-          <Sparkles size={17} aria-hidden="true" />
-        )}
+      <h1>生成今天的精听课程</h1>
+      <p>进入后直接看视频、逐句精听、跟读和输出。</p>
+      <button disabled={isGenerating || aiConfigured === false} type="button" onClick={onGenerate}>
+        {isGenerating ? <Loader2 className="daily-training-spin" size={17} /> : <Sparkles size={17} />}
         生成今日训练
       </button>
+      {aiConfigured === false ? <p className="daily-lesson-error">AI 服务尚未配置 API_KEY。</p> : null}
+      {error ? <p className="daily-lesson-error">{error}</p> : null}
     </section>
   );
 }
@@ -1055,15 +1108,13 @@ function loadTrainingRecords(): EnglishTrainingRecord[] {
     const rawValue = window.localStorage.getItem(storageKey);
     const parsed = rawValue ? (JSON.parse(rawValue) as unknown) : [];
 
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(isTrainingRecord).map((record) => ({
-      ...record,
-      training: ensureTrainingDefaults(record.training),
-      completedSteps: record.completedSteps ?? []
-    }));
+    return Array.isArray(parsed)
+      ? parsed.filter(isTrainingRecord).map((record) => ({
+          ...record,
+          training: ensureTrainingDefaults(record.training),
+          completedSteps: record.completedSteps ?? []
+        }))
+      : [];
   } catch {
     return [];
   }
@@ -1081,106 +1132,39 @@ function upsertRecord(
   records: EnglishTrainingRecord[],
   nextRecord: EnglishTrainingRecord
 ): EnglishTrainingRecord[] {
-  const next = records.filter((record) => record.training.date !== nextRecord.training.date);
-
-  return [...next, nextRecord].sort((left, right) =>
-    left.training.date.localeCompare(right.training.date)
-  );
+  return [
+    ...records.filter((record) => record.training.date !== nextRecord.training.date),
+    nextRecord
+  ].sort((left, right) => left.training.date.localeCompare(right.training.date));
 }
 
 function buildHistorySummary(records: EnglishTrainingRecord[]): DailyTrainingHistorySummary {
   const completedRecords = records.filter((record) => record.training.completed);
-  const recentRecords = [...records]
-    .sort((left, right) => right.training.date.localeCompare(left.training.date))
-    .slice(0, 8);
-  const allExpressions = records.flatMap((record) => record.training.expressions);
-  const dueReviewExpressions = allExpressions
-    .filter((expression) => expression.reviewDate <= getTodayKey())
-    .map((expression) => expression.expression)
-    .slice(0, 12);
+  const learningItems = records.flatMap((record) => record.training.learningItems ?? []);
+  const reviewItems = records.flatMap((record) => record.training.review ?? []);
+  const reviewedItems = reviewItems.filter((item) => typeof item.correct === "boolean");
 
   return {
     totalDays: records.length,
     completedDays: completedRecords.length,
-    learnedExpressions: allExpressions.length,
-    reviewAccuracy: getProgress(records).reviewAccuracy,
-    recentTopics: recentRecords.map((record) => record.training.topic),
-    recentWeaknesses: recentRecords
-      .flatMap((record) => [
-        ...record.training.weaknesses.listening,
-        ...record.training.weaknesses.expression,
-        ...record.training.weaknesses.speaking,
-        ...record.training.weaknesses.reading
-      ])
-      .slice(0, 12),
-    dueReviewExpressions,
-    recentFeedback: recentRecords
-      .map((record) =>
-        [
-          record.training.speaking.answer,
-          record.training.speaking.feedback?.suggestion,
-          record.feedback?.practiceNotes
-        ]
-          .filter(Boolean)
-          .join(" | ")
-      )
-      .filter((value) => value.trim().length > 0)
+    learnedExpressions: learningItems.length,
+    reviewAccuracy: reviewedItems.length
+      ? Math.round((reviewedItems.filter((item) => item.correct).length / reviewedItems.length) * 100)
+      : 0,
+    recentTopics: records.slice(-8).map((record) => record.training.topic),
+    recentWeaknesses: [],
+    dueReviewExpressions: reviewItems.map((item) => item.expression).slice(0, 12),
+    recentFeedback: records
+      .slice(-8)
+      .map((record) => record.training.outputTask?.feedback)
+      .filter((item): item is string => !!item)
   };
-}
-
-function getProgress(records: EnglishTrainingRecord[]) {
-  const expressions = records.flatMap((record) => record.training.expressions);
-  const reviewItems = records.flatMap((record) => record.training.review);
-  const reviewedItems = reviewItems.filter((item) => typeof item.correct === "boolean");
-  const correctReviews = reviewedItems.filter((item) => item.correct).length;
-  const listeningMinutes = records.reduce(
-    (total, record) => total + parseDurationMinutes(record.training.listening.resource.duration),
-    0
-  );
-
-  return {
-    totalDays: records.length,
-    learnedExpressions: expressions.length,
-    listeningHours: Math.round((listeningMinutes / 60) * 10) / 10,
-    speakingPracticeCount: records.filter((record) => record.training.speaking.answer).length,
-    reviewAccuracy:
-      reviewedItems.length > 0 ? Math.round((correctReviews / reviewedItems.length) * 100) : 0
-  };
-}
-
-function getNextDayNumber(records: EnglishTrainingRecord[]): number {
-  if (records.length === 0) {
-    return 1;
-  }
-
-  return Math.max(...records.map((record) => record.training.dayNumber)) + 1;
-}
-
-function getNextStep(step: TrainingStep): TrainingStep | null {
-  const index = steps.findIndex((item) => item.key === step);
-  return steps[index + 1]?.key ?? null;
-}
-
-function getTrainingVersion(training: DailyTraining): string {
-  return [
-    training.date,
-    training.dayNumber,
-    training.topic,
-    training.listening.resource.url,
-    training.listening.resource.embedUrl,
-    training.reading.title,
-    training.speaking.question,
-    training.expressions.map((expression) => expression.id).join(",")
-  ]
-    .filter(Boolean)
-    .join("|");
-}
-
-function getTodayKey(): string {
-  return new Date().toLocaleDateString("en-CA");
 }
 
 function ensureTrainingDefaults(training: DailyTraining): DailyTraining {
+  const transcriptSegments = training.transcriptSegments ?? [];
+  const learningItems = training.learningItems ?? [];
+
   return {
     ...training,
     activeStep: training.activeStep ?? "listening",
@@ -1191,11 +1175,38 @@ function ensureTrainingDefaults(training: DailyTraining): DailyTraining {
       speaking: !!training.stepStatus?.speaking,
       review: !!training.stepStatus?.review
     },
-    expressions: training.expressions.map((expression) => ({
-      ...expression,
-      favorite: !!expression.favorite,
-      mastery: expression.mastery ?? "new"
-    }))
+    transcriptSource: training.transcriptSource ?? (transcriptSegments.length ? "auto" : "unavailable"),
+    transcriptSegments,
+    learningItems,
+    dictation: training.dictation ?? [],
+    comprehension: training.comprehension ?? [],
+    shadowing: training.shadowing ?? {
+      segmentIds: transcriptSegments.slice(0, 3).map((segment) => segment.id),
+      recordings: {},
+      completed: false
+    },
+    outputTask: training.outputTask ?? {
+      prompt: training.speaking?.question ?? "Use three expressions from this lesson.",
+      requiredItemIds: learningItems.slice(0, 3).map((item) => item.id),
+      completed: false
+    },
+    lessonReview: training.lessonReview ?? {
+      expressions: learningItems.slice(0, 3).map((item) => item.text),
+      soundIssues: [],
+      reviewSentence: transcriptSegments[0]?.text ?? "",
+      addedToReview: false
+    },
+    expressions: training.expressions ?? [],
+    practice: training.practice ?? { fillBlank: [], replacements: [], sentenceBuilders: [] },
+    review: training.review ?? [],
+    weaknesses: training.weaknesses ?? { listening: [], expression: [], speaking: [], reading: [] },
+    dashboard: training.dashboard ?? {
+      totalDays: 0,
+      learnedExpressions: 0,
+      listeningMinutes: 0,
+      speakingPracticeCount: 0,
+      reviewAccuracy: 0
+    }
   };
 }
 
@@ -1207,48 +1218,98 @@ function isTrainingRecord(value: unknown): value is EnglishTrainingRecord {
   const record = value as Partial<EnglishTrainingRecord>;
   const training = record.training as Partial<DailyTraining> | undefined;
 
-  return !!(
-    training?.date &&
-    training.dayNumber &&
-    training.listening &&
-    Array.isArray(training.expressions) &&
-    training.practice &&
-    training.speaking &&
-    training.reading
-  );
+  return !!(training?.date && training.dayNumber && training.listening);
 }
 
-function speak(text: string) {
-  if (typeof window === "undefined" || !window.speechSynthesis) {
-    return;
+function getNextDayNumber(records: EnglishTrainingRecord[]): number {
+  return records.length ? Math.max(...records.map((record) => record.training.dayNumber)) + 1 : 1;
+}
+
+function getLessonProgress(training: DailyTraining): number {
+  const checks = [
+    training.transcriptSegments.some((segment) => segment.markedUnclear || segment.completed),
+    training.learningItems.some((item) => item.saved || item.mastery !== "unknown"),
+    training.dictation.some((exercise) => exercise.completed),
+    training.shadowing.completed || Object.keys(training.shadowing.recordings).length > 0,
+    training.outputTask.completed || !!training.outputTask.feedback,
+    training.completed
+  ];
+
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function ensureSegmentInDictation(
+  exercises: DictationExercise[],
+  segment: TranscriptSegment
+): DictationExercise[] {
+  if (exercises.some((exercise) => exercise.segmentId === segment.id)) {
+    return exercises;
   }
 
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = 0.9;
-  window.speechSynthesis.speak(utterance);
+  return [
+    {
+      segmentId: segment.id,
+      userAnswer: "",
+      correctText: segment.text,
+      missingWords: [],
+      incorrectWords: [],
+      completed: false,
+      hint: "你标记了这句没听清。"
+    },
+    ...exercises
+  ].slice(0, 5);
 }
 
-function renderReadingText(text: string, highlights: { expression: string; meaning: string }[]) {
-  const expressions = highlights
-    .map((highlight) => highlight.expression)
-    .filter(Boolean)
+function mergeReviewItems(review: ReviewItem[], items: LearningItem[]): ReviewItem[] {
+  const nextItems = items.map((item) => ({
+    expressionId: item.id,
+    expression: item.text,
+    meaning: item.meaning,
+    dueDate: getTodayKey(),
+    prompt: "用这个表达造一句自己的真实句子。"
+  }));
+  const existing = new Set(review.map((item) => item.expressionId));
+
+  return [...review, ...nextItems.filter((item) => !existing.has(item.expressionId))];
+}
+
+function findSegmentByTime(segments: TranscriptSegment[], time: number): TranscriptSegment | undefined {
+  return segments.find((segment) => time >= segment.startTime && time <= segment.endTime) ?? segments[0];
+}
+
+function compareWords(userAnswer: string, correctText: string) {
+  const userWords = normalizeWords(userAnswer);
+  const correctWords = normalizeWords(correctText);
+  const missingWords = correctWords.filter((word) => !userWords.includes(word));
+  const incorrectWords = userWords.filter((word) => !correctWords.includes(word));
+
+  return { missingWords, incorrectWords };
+}
+
+function normalizeWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z'\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function renderLearningText(text: string, items: LearningItem[]) {
+  const targets = items
+    .map((item) => item.text)
+    .filter((item) => item.length > 2)
     .sort((left, right) => right.length - left.length);
 
-  if (expressions.length === 0) {
+  if (!targets.length) {
     return text;
   }
 
-  const pattern = new RegExp(`(${expressions.map(escapeRegExp).join("|")})`, "gi");
+  const pattern = new RegExp(`(${targets.map(escapeRegExp).join("|")})`, "gi");
 
   return text.split(pattern).map((part, index) => {
-    const highlight = highlights.find(
-      (item) => item.expression.toLowerCase() === part.toLowerCase()
-    );
-
-    return highlight ? (
-      <mark key={`${part}-${index}`} title={`${highlight.meaning}`}>
+    const match = items.find((item) => item.text.toLowerCase() === part.toLowerCase());
+    return match ? (
+      <mark title={match.meaning} key={`${part}-${index}`}>
         {part}
       </mark>
     ) : (
@@ -1257,19 +1318,52 @@ function renderReadingText(text: string, highlights: { expression: string; meani
   });
 }
 
-function parseDurationMinutes(duration: string): number {
-  const minuteMatch = duration.match(/(\d+)\s*(min|minute|分钟|分)/i);
-
-  if (minuteMatch) {
-    return Number(minuteMatch[1]);
+function appendStartTime(url?: string, startTime?: number): string | undefined {
+  if (!url || typeof startTime !== "number") {
+    return url;
   }
 
-  const numberMatch = duration.match(/\d+/);
-  return numberMatch ? Number(numberMatch[0]) : 5;
+  try {
+    const nextUrl = new URL(url);
+
+    if (nextUrl.hostname.includes("bilibili")) {
+      nextUrl.searchParams.set("t", String(Math.floor(startTime)));
+    } else if (nextUrl.hostname.includes("youtube")) {
+      nextUrl.searchParams.set("start", String(Math.floor(startTime)));
+    }
+
+    return nextUrl.toString();
+  } catch {
+    return url;
+  }
 }
 
-function isSameAnswer(left?: string, right?: string): boolean {
-  return (left ?? "").trim().toLowerCase() === (right ?? "").trim().toLowerCase();
+function stopAndRun(event: React.MouseEvent, callback: () => void) {
+  event.stopPropagation();
+  callback();
+}
+
+function getLearningTypeLabel(type: LearningItem["type"]): string {
+  switch (type) {
+    case "vocabulary":
+      return "词汇";
+    case "expression":
+      return "表达";
+    case "pronunciation":
+      return "发音";
+    case "connectedSpeech":
+      return "连读";
+  }
+}
+
+function formatTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.floor(seconds % 60);
+  return `${minutes}:${rest.toString().padStart(2, "0")}`;
+}
+
+function getTodayKey(): string {
+  return new Date().toLocaleDateString("en-CA");
 }
 
 function escapeRegExp(value: string): string {
