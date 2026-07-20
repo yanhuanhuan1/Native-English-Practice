@@ -1,16 +1,22 @@
 import type {
-  EnglishTrainingDay,
-  FeedbackTask,
-  ListeningTask,
-  ReadingTask,
-  SpeakingTask,
-  TrainingLanguageChunk,
+  DailyTraining,
+  ExpressionMastery,
+  FillBlankPractice,
+  ListeningPlayerType,
+  ListeningResource,
+  PracticeModule,
+  ProgressDashboard,
+  ReadingCard,
+  ReadingHighlight,
+  ReplacementPractice,
+  ReviewItem,
+  SentenceBuilderPractice,
+  SpeakingFeedback,
+  TrainingExpression,
   TrainingLevel,
   TrainingPhase,
-  TrainingResource,
-  TrainingResourceType,
-  TrainingVocabularyItem,
-  WritingTask
+  TrainingStep,
+  WeaknessTracking
 } from "@/types/daily-training";
 
 export class DailyTrainingParseError extends Error {
@@ -32,50 +38,58 @@ const validPhases: TrainingPhase[] = [
   "phase3-ielts7"
 ];
 
-const validResourceTypes: TrainingResourceType[] = ["listening", "reading"];
+const validSteps: TrainingStep[] = [
+  "listening",
+  "expression",
+  "practice",
+  "speaking",
+  "review"
+];
 
-export function parseEnglishTrainingDay(rawContent: string): EnglishTrainingDay {
+const validPlayerTypes: ListeningPlayerType[] = ["youtube", "audio", "web"];
+const validMastery: ExpressionMastery[] = ["new", "learning", "mastered"];
+
+export function parseEnglishTrainingDay(rawContent: string): DailyTraining {
   const data = parseStrictJsonObject(rawContent);
-  const level = requireEnum(data, "level", validLevels);
-  const phase = requireEnum(data, "phase", validPhases);
   const dayNumber = requirePositiveInteger(data, "dayNumber");
-  const resources = requireArray(data, "resources", parseResource);
-  const listeningTask = parseListeningTask(requireRecord(data, "listeningTask"));
-  const readingTask = parseReadingTask(requireRecord(data, "readingTask"));
-  const vocabulary = requireArray(data, "vocabulary", parseVocabularyItem).slice(0, 10);
-  const chunks = requireArray(data, "chunks", parseLanguageChunk).slice(0, 8);
+  const expressions = requireArray(data, "expressions", parseExpression).slice(0, 8);
 
-  if (vocabulary.length < 5) {
-    throw new DailyTrainingParseError("Training day must include at least 5 vocabulary items.");
-  }
-
-  if (chunks.length < 5) {
-    throw new DailyTrainingParseError("Training day must include at least 5 language chunks.");
-  }
-
-  if (!resources.some((resource) => resource.type === "listening")) {
-    throw new DailyTrainingParseError("Training day must include a listening resource.");
-  }
-
-  if (!resources.some((resource) => resource.type === "reading")) {
-    throw new DailyTrainingParseError("Training day must include a reading resource.");
+  if (expressions.length < 5) {
+    throw new DailyTrainingParseError("Training day must include at least 5 expressions.");
   }
 
   return {
     date: requireDateString(data, "date"),
     dayNumber,
-    level,
-    phase,
+    level: requireEnum(data, "level", validLevels),
+    phase: requireEnum(data, "phase", validPhases),
     topic: requireString(data, "topic"),
-    resources,
-    listeningTask,
-    vocabulary,
-    chunks,
-    readingTask,
-    speakingTask: parseSpeakingTask(requireRecord(data, "speakingTask")),
-    writingTask: parseWritingTask(requireRecord(data, "writingTask"), dayNumber),
-    feedbackTask: parseFeedbackTask(requireRecord(data, "feedbackTask")),
+    activeStep: normalizeStep(optionalString(data, "activeStep") ?? "listening"),
+    stepStatus: parseStepStatus(optionalRecord(data, "stepStatus")),
+    listening: parseListening(requireRecord(data, "listening")),
+    expressions,
+    practice: parsePractice(requireRecord(data, "practice")),
+    speaking: {
+      question: requireString(requireRecord(data, "speaking"), "question")
+    },
+    reading: parseReadingCard(requireRecord(data, "reading")),
+    review: requireArray(data, "review", parseReviewItem).slice(0, 8),
+    weaknesses: parseWeaknesses(requireRecord(data, "weaknesses")),
+    dashboard: parseDashboard(requireRecord(data, "dashboard")),
     completed: false
+  };
+}
+
+export function parseSpeakingFeedback(rawContent: string): SpeakingFeedback {
+  const data = parseStrictJsonObject(rawContent);
+
+  return {
+    fluency: requireScore(data, "fluency"),
+    grammar: requireScore(data, "grammar"),
+    vocabulary: requireScore(data, "vocabulary"),
+    naturalness: requireScore(data, "naturalness"),
+    suggestion: requireString(data, "suggestion"),
+    betterVersion: requireString(data, "betterVersion")
   };
 }
 
@@ -95,75 +109,130 @@ function parseStrictJsonObject(rawContent: string): Record<string, unknown> {
   return data;
 }
 
-function parseResource(value: unknown): TrainingResource {
-  const data = ensureRecord(value, "resource");
-  const type = requireEnum(data, "type", validResourceTypes);
-  const url = requireString(data, "url");
-
-  if (!isHttpUrl(url)) {
-    throw new DailyTrainingParseError("Resource url must be a valid http(s) URL.");
-  }
+function parseListening(data: Record<string, unknown>): DailyTraining["listening"] {
+  const secondListen = requireRecord(data, "secondListen");
 
   return {
-    type,
-    websiteName: requireString(data, "websiteName"),
+    resource: parseListeningResource(requireRecord(data, "resource")),
+    firstListen: {
+      instruction: requireString(requireRecord(data, "firstListen"), "instruction"),
+      questions: requireStringArray(requireRecord(data, "firstListen"), "questions").slice(0, 5)
+    },
+    secondListen: {
+      instruction: requireString(secondListen, "instruction"),
+      task: requireString(secondListen, "task")
+    },
+    transcript: optionalString(data, "transcript")
+  };
+}
+
+function parseListeningResource(data: Record<string, unknown>): ListeningResource {
+  const url = requireHttpUrl(data, "url");
+  const playerType = requireEnum(data, "playerType", validPlayerTypes);
+  const embedUrl =
+    optionalHttpUrl(data, "embedUrl") ?? (playerType === "youtube" ? toYoutubeEmbedUrl(url) : undefined);
+
+  return {
     title: requireString(data, "title"),
+    source: requireString(data, "source"),
     url,
-    difficulty: requireString(data, "difficulty"),
+    embedUrl,
+    audioUrl: optionalHttpUrl(data, "audioUrl"),
+    level: requireString(data, "level"),
+    duration: requireString(data, "duration"),
+    playerType,
     whySuitable: requireString(data, "whySuitable")
   };
 }
 
-function parseListeningTask(data: Record<string, unknown>): ListeningTask {
-  const resource = parseResource(data.resource);
-
-  if (resource.type !== "listening") {
-    throw new DailyTrainingParseError("Listening task resource must have type listening.");
-  }
-
-  const firstListen = requireRecord(data, "firstListen");
-  const secondListen = requireRecord(data, "secondListen");
+function parseExpression(value: unknown): TrainingExpression {
+  const data = ensureRecord(value, "expression");
 
   return {
-    resource,
-    firstListen: {
-      instruction: requireString(firstListen, "instruction"),
-      questions: requireStringArray(firstListen, "questions").slice(0, 5)
-    },
-    secondListen: {
-      instruction: requireString(secondListen, "instruction"),
-      extractionTarget: requireString(secondListen, "extractionTarget")
-    }
-  };
-}
-
-function parseReadingTask(data: Record<string, unknown>): ReadingTask {
-  const resource = parseResource(data.resource);
-
-  if (resource.type !== "reading") {
-    throw new DailyTrainingParseError("Reading task resource must have type reading.");
-  }
-
-  return {
-    resource,
-    readingTarget: requireString(data, "readingTarget"),
-    extractionInstruction: requireString(data, "extractionInstruction")
-  };
-}
-
-function parseVocabularyItem(value: unknown): TrainingVocabularyItem {
-  const data = ensureRecord(value, "vocabulary item");
-
-  return {
-    word: requireString(data, "word"),
+    id: optionalString(data, "id") ?? slugify(requireString(data, "expression")),
+    expression: requireString(data, "expression"),
     meaning: requireString(data, "meaning"),
-    commonCollocations: requireStringArray(data, "commonCollocations").slice(0, 5),
-    exampleSentence: requireString(data, "exampleSentence")
+    example: requireString(data, "example"),
+    scenario: requireString(data, "scenario"),
+    pronunciation: requireString(data, "pronunciation"),
+    difficulty: requireString(data, "difficulty"),
+    favorite: optionalBoolean(data, "favorite") ?? false,
+    reviewDate: requireDateString(data, "reviewDate"),
+    mastery: requireEnum(data, "mastery", validMastery)
   };
 }
 
-function parseLanguageChunk(value: unknown): TrainingLanguageChunk {
-  const data = ensureRecord(value, "language chunk");
+function parsePractice(data: Record<string, unknown>): PracticeModule {
+  const fillBlank = requireArray(data, "fillBlank", parseFillBlank).slice(0, 4);
+  const replacements = requireArray(data, "replacements", parseReplacement).slice(0, 2);
+  const sentenceBuilders = requireArray(data, "sentenceBuilders", parseSentenceBuilder).slice(0, 3);
+
+  if (fillBlank.length < 2 || replacements.length < 1 || sentenceBuilders.length < 1) {
+    throw new DailyTrainingParseError("Practice module must include fill blank, replacement, and sentence builder tasks.");
+  }
+
+  return { fillBlank, replacements, sentenceBuilders };
+}
+
+function parseFillBlank(value: unknown): FillBlankPractice {
+  const data = ensureRecord(value, "fill blank practice");
+
+  return {
+    id: optionalString(data, "id") ?? slugify(requireString(data, "prompt")),
+    prompt: requireString(data, "prompt"),
+    answer: requireString(data, "answer"),
+    hint: optionalString(data, "hint")
+  };
+}
+
+function parseReplacement(value: unknown): ReplacementPractice {
+  const data = ensureRecord(value, "replacement practice");
+
+  return {
+    id: optionalString(data, "id") ?? slugify(requireString(data, "baseSentence")),
+    baseSentence: requireString(data, "baseSentence"),
+    targetWord: requireString(data, "targetWord"),
+    replacements: requireStringArray(data, "replacements").slice(0, 5),
+    modelAnswer: requireString(data, "modelAnswer")
+  };
+}
+
+function parseSentenceBuilder(value: unknown): SentenceBuilderPractice {
+  const data = ensureRecord(value, "sentence builder practice");
+
+  return {
+    id: optionalString(data, "id") ?? slugify(requireString(data, "modelAnswer")),
+    keywords: requireStringArray(data, "keywords").slice(0, 6),
+    modelAnswer: requireString(data, "modelAnswer"),
+    context: requireString(data, "context")
+  };
+}
+
+function parseReadingCard(data: Record<string, unknown>): ReadingCard {
+  const text = requireString(data, "text");
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  if (wordCount < 80 || wordCount > 230) {
+    throw new DailyTrainingParseError("Reading card must be around 100-200 words.");
+  }
+
+  return {
+    title: requireString(data, "title"),
+    source: requireString(data, "source"),
+    url: requireHttpUrl(data, "url"),
+    level: requireString(data, "level"),
+    text,
+    zhAssist: requireString(data, "zhAssist"),
+    highlightedExpressions: requireArray(
+      data,
+      "highlightedExpressions",
+      parseReadingHighlight
+    ).slice(0, 8)
+  };
+}
+
+function parseReadingHighlight(value: unknown): ReadingHighlight {
+  const data = ensureRecord(value, "reading highlight");
 
   return {
     expression: requireString(data, "expression"),
@@ -172,46 +241,59 @@ function parseLanguageChunk(value: unknown): TrainingLanguageChunk {
   };
 }
 
-function parseSpeakingTask(data: Record<string, unknown>): SpeakingTask {
+function parseReviewItem(value: unknown): ReviewItem {
+  const data = ensureRecord(value, "review item");
+
   return {
-    topic: requireString(data, "topic"),
-    requirement: requireString(data, "requirement"),
-    structure: requireStringArray(data, "structure"),
-    simpleExpressionFrame: requireStringArray(data, "simpleExpressionFrame")
+    expressionId: requireString(data, "expressionId"),
+    expression: requireString(data, "expression"),
+    meaning: requireString(data, "meaning"),
+    dueDate: requireDateString(data, "dueDate"),
+    prompt: requireString(data, "prompt")
   };
 }
 
-function parseWritingTask(data: Record<string, unknown>, dayNumber: number): WritingTask {
-  const enabled = requireBoolean(data, "enabled");
-  const taskType = requireEnum(data, "taskType", [
-    "none",
-    "sentence",
-    "paragraph",
-    "ielts-task-2"
-  ] as const);
-
-  if (dayNumber <= 14 && (enabled || taskType !== "none")) {
-    throw new DailyTrainingParseError("Writing must be disabled during the first two weeks.");
-  }
-
+function parseWeaknesses(data: Record<string, unknown>): WeaknessTracking {
   return {
-    enabled,
-    taskType,
-    prompt: optionalString(data, "prompt"),
-    bannedTemplates: requireStringArray(data, "bannedTemplates")
+    listening: requireStringArray(data, "listening").slice(0, 5),
+    expression: requireStringArray(data, "expression").slice(0, 5),
+    speaking: requireStringArray(data, "speaking").slice(0, 5),
+    reading: requireStringArray(data, "reading").slice(0, 5)
   };
 }
 
-function parseFeedbackTask(data: Record<string, unknown>): FeedbackTask {
+function parseDashboard(data: Record<string, unknown>): ProgressDashboard {
   return {
-    englishAnswerPrompt: requireString(data, "englishAnswerPrompt"),
-    chunkSentencePrompt: requireString(data, "chunkSentencePrompt"),
-    nextDayAdjustmentRule: requireString(data, "nextDayAdjustmentRule")
+    totalDays: requireNonNegativeInteger(data, "totalDays"),
+    learnedExpressions: requireNonNegativeInteger(data, "learnedExpressions"),
+    listeningMinutes: requireNonNegativeInteger(data, "listeningMinutes"),
+    speakingPracticeCount: requireNonNegativeInteger(data, "speakingPracticeCount"),
+    reviewAccuracy: requireScore(data, "reviewAccuracy")
   };
+}
+
+function parseStepStatus(data?: Record<string, unknown>) {
+  return validSteps.reduce(
+    (status, step) => ({
+      ...status,
+      [step]: typeof data?.[step] === "boolean" ? data[step] : false
+    }),
+    {} as DailyTraining["stepStatus"]
+  );
 }
 
 function requireRecord(data: Record<string, unknown>, key: string): Record<string, unknown> {
   return ensureRecord(data[key], key);
+}
+
+function optionalRecord(data: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = data[key];
+
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  return ensureRecord(value, key);
 }
 
 function ensureRecord(value: unknown, label: string): Record<string, unknown> {
@@ -249,7 +331,7 @@ function requireString(data: Record<string, unknown>, key: string): string {
 function optionalString(data: Record<string, unknown>, key: string): string | undefined {
   const value = data[key];
 
-  if (value === undefined || value === null) {
+  if (value === undefined || value === null || value === "") {
     return undefined;
   }
 
@@ -283,6 +365,26 @@ function requirePositiveInteger(data: Record<string, unknown>, key: string): num
   return value;
 }
 
+function requireNonNegativeInteger(data: Record<string, unknown>, key: string): number {
+  const value = data[key];
+
+  if (!Number.isInteger(value) || typeof value !== "number" || value < 0) {
+    throw new DailyTrainingParseError(`Field "${key}" must be a non-negative integer.`);
+  }
+
+  return value;
+}
+
+function requireScore(data: Record<string, unknown>, key: string): number {
+  const value = data[key];
+
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 100) {
+    throw new DailyTrainingParseError(`Field "${key}" must be a score from 0 to 100.`);
+  }
+
+  return Math.round(value);
+}
+
 function requireDateString(data: Record<string, unknown>, key: string): string {
   const value = requireString(data, key);
 
@@ -293,11 +395,15 @@ function requireDateString(data: Record<string, unknown>, key: string): string {
   return value;
 }
 
-function requireBoolean(data: Record<string, unknown>, key: string): boolean {
+function optionalBoolean(data: Record<string, unknown>, key: string): boolean | undefined {
   const value = data[key];
 
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
   if (typeof value !== "boolean") {
-    throw new DailyTrainingParseError(`Field "${key}" must be boolean.`);
+    throw new DailyTrainingParseError(`Field "${key}" must be boolean when present.`);
   }
 
   return value;
@@ -315,6 +421,66 @@ function requireEnum<T extends readonly string[]>(
   }
 
   return value;
+}
+
+function requireHttpUrl(data: Record<string, unknown>, key: string): string {
+  const value = requireString(data, key);
+
+  if (!isHttpUrl(value)) {
+    throw new DailyTrainingParseError(`Field "${key}" must be a valid http(s) URL.`);
+  }
+
+  return value;
+}
+
+function optionalHttpUrl(data: Record<string, unknown>, key: string): string | undefined {
+  const value = optionalString(data, key);
+
+  if (!value) {
+    return undefined;
+  }
+
+  if (!isHttpUrl(value)) {
+    throw new DailyTrainingParseError(`Field "${key}" must be a valid http(s) URL when present.`);
+  }
+
+  return value;
+}
+
+function normalizeStep(value: string): TrainingStep {
+  return validSteps.includes(value as TrainingStep) ? (value as TrainingStep) : "listening";
+}
+
+function toYoutubeEmbedUrl(url: string): string | undefined {
+  const id = extractYoutubeId(url);
+
+  return id ? `https://www.youtube.com/embed/${id}` : undefined;
+}
+
+function extractYoutubeId(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.hostname.includes("youtu.be")) {
+      return parsed.pathname.replace("/", "") || undefined;
+    }
+
+    if (parsed.hostname.includes("youtube.com")) {
+      return parsed.searchParams.get("v") ?? parsed.pathname.split("/").pop() ?? undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 48);
 }
 
 function isHttpUrl(value: string): boolean {

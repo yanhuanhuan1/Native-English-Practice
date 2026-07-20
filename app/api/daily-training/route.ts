@@ -114,12 +114,12 @@ function normalizeHistorySummary(
   return {
     totalDays: safeCount(value?.totalDays),
     completedDays: safeCount(value?.completedDays),
-    recentTopics: Array.isArray(value?.recentTopics)
-      ? value.recentTopics.filter(isNonEmptyString).slice(0, 8)
-      : [],
-    recentFeedback: Array.isArray(value?.recentFeedback)
-      ? value.recentFeedback.filter(isNonEmptyString).slice(0, 8)
-      : []
+    learnedExpressions: safeCount(value?.learnedExpressions),
+    reviewAccuracy: safeScore(value?.reviewAccuracy),
+    recentTopics: safeStringArray(value?.recentTopics, 8),
+    recentWeaknesses: safeStringArray(value?.recentWeaknesses, 12),
+    dueReviewExpressions: safeStringArray(value?.dueReviewExpressions, 12),
+    recentFeedback: safeStringArray(value?.recentFeedback, 8)
   };
 }
 
@@ -127,6 +127,16 @@ function safeCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : 0;
+}
+
+function safeScore(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : 0;
+}
+
+function safeStringArray(value: unknown, limit: number): string[] {
+  return Array.isArray(value) ? value.filter(isNonEmptyString).slice(0, limit) : [];
 }
 
 function isNonEmptyString(value: unknown): value is string {
