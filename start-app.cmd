@@ -23,11 +23,19 @@ if errorlevel 1 (
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$conn = Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue; if ($conn) { exit 0 } exit 1"
 if "%errorlevel%"=="0" (
-  echo Port %PORT% is already running. Opening the browser...
-  start "" "%URL%"
-  echo.
-  pause
-  exit /b 0
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-local-preview.ps1" -Port %PORT%
+  if "%errorlevel%"=="0" (
+    echo Port %PORT% is already running and healthy. Opening the browser...
+    start "" "%URL%"
+    echo.
+    pause
+    exit /b 0
+  )
+
+  echo Port %PORT% is running, but the local preview is unhealthy.
+  echo Restarting the local Next.js server...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\stop-local-dev.ps1" -ProjectRoot "%~dp0"
+  timeout /t 2 /nobreak > nul
 )
 
 if not exist "node_modules" (
