@@ -33,6 +33,9 @@ export function buildDailyTrainingMessages({
         "- Use web search or browsing if your connected agent API supports it.",
         "- Prefer real resources from BBC Learning English, British Council LearnEnglish, VOA Learning English, TED-Ed, and high-quality YouTube channels.",
         "- Listening must be playable inside the site when possible: provide YouTube embedUrl or a direct audioUrl. If neither is available, use playerType web and provide the source URL plus a short transcript/summary.",
+        "- Before choosing a listening video, verify the original page is not 404, not moved, not private, and not region/embedding restricted.",
+        "- Do not use old BBC Chinese paths such as /learningenglish/chinese/features/... unless you have verified the exact page still exists.",
+        "- For YouTube, only use public videos that can be embedded; provide both the watch URL and the /embed/ URL.",
         "- Reading must be a Daily Reading Card of 100-200 words based on or adapted from a real linked source. Do not paste a copyrighted full article.",
         "- Vocabulary must come from the selected listening/reading theme and be written as reusable expression chunks.",
         "- Provide all resource links and difficulty judgments.",
@@ -185,6 +188,7 @@ export function buildDailyTrainingMessages({
         "- Weaknesses should be short Chinese labels based on history and current task, not generic long paragraphs.",
         "- For the first 14 days, do not include writing tasks at all.",
         "- All URLs must be valid http(s) URLs.",
+        "- Listening resource must be currently valid and playable. Do not return dead pages, moved pages, pages showing 404/not found, private videos, or non-embeddable videos.",
         "- If using YouTube, convert watch URLs to embed URLs."
       ].join("\n")
     }

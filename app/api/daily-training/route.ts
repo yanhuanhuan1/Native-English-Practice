@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requestChatCompletion } from "@/lib/ai/client";
 import { getProviderPreset } from "@/lib/ai/config";
+import { auditDailyTrainingMedia } from "@/lib/daily-training/media-audit";
 import { buildDailyTrainingMessages } from "@/lib/daily-training/prompt";
 import {
   DailyTrainingParseError,
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
       jsonMode: true
     });
 
-    const training = parseEnglishTrainingDay(rawTraining);
+    const training = await auditDailyTrainingMedia(parseEnglishTrainingDay(rawTraining));
 
     return NextResponse.json({
       training: {
