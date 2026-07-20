@@ -2840,6 +2840,35 @@ textarea:focus {
   padding-bottom: 18px;
 }
 
+.daily-lesson-header-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.daily-lesson-level-inline {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.daily-lesson-level-inline span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.daily-lesson-level-inline select {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px;
+}
+
 .daily-lesson-kicker {
   color: var(--accent-strong);
   font-size: 13px;
@@ -3212,6 +3241,42 @@ textarea:focus {
   color: var(--text-muted);
 }
 
+.daily-lesson-level-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin: 6px 0;
+}
+
+.daily-lesson-level-grid button {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-height: 74px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+}
+
+.daily-lesson-level-grid button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.daily-lesson-level-grid strong {
+  font-size: 18px;
+}
+
+.daily-lesson-level-grid span {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: none;
+}
+
 @media (max-width: 820px) {
   .daily-lesson-page {
     padding: 16px;
@@ -3220,6 +3285,15 @@ textarea:focus {
   .daily-lesson-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .daily-lesson-header-actions,
+  .daily-lesson-level-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-lesson-header-actions {
+    display: grid;
   }
 
   .daily-lesson-player,

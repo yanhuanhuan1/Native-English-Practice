@@ -1,6 +1,14 @@
 export type TrainingPhase = "phase1-foundation" | "phase2-bridge" | "phase3-ielts7";
 
-export type TrainingLevel = "IELTS 5.0-6.0" | "IELTS 6.0-6.5" | "IELTS 7+";
+export type TrainingLevel =
+  | "IELTS 5.0"
+  | "IELTS 5.5"
+  | "IELTS 6.0"
+  | "IELTS 6.5"
+  | "IELTS 7.0+"
+  | "IELTS 5.0-6.0"
+  | "IELTS 6.0-6.5"
+  | "IELTS 7+";
 
 export type TrainingStep =
   | "listening"
@@ -224,6 +232,7 @@ export interface DailyTraining {
   date: string;
   dayNumber: number;
   level: TrainingLevel;
+  selectedReserveId?: string;
   phase: TrainingPhase;
   topic: string;
   activeStep: TrainingStep;

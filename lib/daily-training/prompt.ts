@@ -1,15 +1,20 @@
 import type { ChatMessage } from "@/lib/ai/config";
-import type { DailyTrainingHistorySummary } from "@/types/daily-training";
+import type { DailyTrainingVideoReserve } from "@/data/dailyTrainingVideoLibrary";
+import type { DailyTrainingHistorySummary, TrainingLevel } from "@/types/daily-training";
 
 interface BuildDailyTrainingMessagesArgs {
   date: string;
   dayNumber: number;
+  level: TrainingLevel;
+  reserveItem: DailyTrainingVideoReserve;
   historySummary: DailyTrainingHistorySummary;
 }
 
 export function buildDailyTrainingMessages({
   date,
   dayNumber,
+  level,
+  reserveItem,
   historySummary
 }: BuildDailyTrainingMessagesArgs): ChatMessage[] {
   return [
@@ -17,16 +22,18 @@ export function buildDailyTrainingMessages({
       role: "system",
       content: [
         "You are designing a daily English listening training lesson for a Chinese learner.",
-        "The learner is CET6-ish in reading, weak in listening and speaking, and currently needs IELTS 5.0-6.0 input.",
+        `The learner is CET6-ish in reading, weak in listening and speaking, and selected level ${level}.`,
         "The product is not a textbook page. It is an interactive listening tool.",
         "",
         "Core workflow:",
         "Watch -> synchronized transcript -> mark unclear sentences -> dictation -> learn useful items -> shadowing -> one output task -> complete lesson.",
         "",
         "Resource rules:",
+        "- Do not randomly choose the lesson theme. Use the selected local reserve item below.",
         "- Prefer Bilibili embeddable videos for China-based users.",
         "- Use public Bilibili videos related to BBC Learning English, TED/TED-Ed, VOA, workplace spoken English, daily conversation, or clear listening practice.",
         "- Provide a valid normal Bilibili video URL and an embed URL like https://player.bilibili.com/player.html?bvid=BV...&page=1&autoplay=0.",
+        "- If the reserve item contains a Bilibili search URL, use it only as a discovery clue. The final resource.url must be a real video page, not a search results page.",
         "- YouTube is a last fallback only.",
         "- Do not use dead pages, moved pages, private videos, non-embeddable videos, or old BBC Chinese paths.",
         "",
@@ -49,7 +56,13 @@ export function buildDailyTrainingMessages({
       content: [
         `Generate one Daily English Training lesson for ${date}.`,
         `Day number: ${dayNumber}.`,
-        buildPhaseRule(dayNumber),
+        `Selected level: ${level}.`,
+        buildPhaseRule(dayNumber, level),
+        "",
+        "Selected local reserve item:",
+        JSON.stringify(reserveItem, null, 2),
+        "",
+        "Use the reserve item as the source intent. Keep the topic, difficulty and focus aligned with it.",
         "",
         "Recent state:",
         JSON.stringify(historySummary, null, 2),
@@ -58,7 +71,7 @@ export function buildDailyTrainingMessages({
         `{
   "date": "YYYY-MM-DD",
   "dayNumber": number,
-  "level": "IELTS 5.0-6.0",
+  "level": "${level}",
   "phase": "phase1-foundation",
   "topic": string,
   "listening": {
@@ -202,11 +215,13 @@ export function buildSpeakingFeedbackMessages({
   ];
 }
 
-function buildPhaseRule(dayNumber: number): string {
+function buildPhaseRule(dayNumber: number, level: TrainingLevel): string {
+  const selectedLevelRule = `Selected difficulty must stay around ${level}; do not jump to harder IELTS 7+ material unless the selected level is IELTS 7.0+.`;
+
   if (dayNumber <= 60) {
     return [
       "Phase 1:",
-      "- IELTS 5.0-6.0.",
+      `- ${selectedLevelRule}`,
       "- Prioritize clear real speech, high-frequency expressions, workplace/daily topics, and short output.",
       "- No writing module in the first two weeks."
     ].join("\n");
@@ -215,14 +230,14 @@ function buildPhaseRule(dayNumber: number): string {
   if (dayNumber <= 120) {
     return [
       "Phase 2:",
-      "- IELTS 6.0-6.5.",
+      `- ${selectedLevelRule}`,
       "- Add accessible news/business content while keeping listening trainable."
     ].join("\n");
   }
 
   return [
     "Phase 3:",
-    "- IELTS 7+.",
+    `- ${selectedLevelRule}`,
     "- Add harder topics and more abstract spoken output, but keep real speech and transcript-first training."
   ].join("\n");
 }

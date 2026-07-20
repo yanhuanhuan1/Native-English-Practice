@@ -31,7 +31,16 @@ export class DailyTrainingParseError extends Error {
   }
 }
 
-const validLevels: TrainingLevel[] = ["IELTS 5.0-6.0", "IELTS 6.0-6.5", "IELTS 7+"];
+const validLevels: TrainingLevel[] = [
+  "IELTS 5.0",
+  "IELTS 5.5",
+  "IELTS 6.0",
+  "IELTS 6.5",
+  "IELTS 7.0+",
+  "IELTS 5.0-6.0",
+  "IELTS 6.0-6.5",
+  "IELTS 7+"
+];
 const validPhases: TrainingPhase[] = ["phase1-foundation", "phase2-bridge", "phase3-ielts7"];
 const validSteps: TrainingStep[] = ["listening", "expression", "practice", "speaking", "review"];
 const validPlayerTypes: ListeningPlayerType[] = ["bilibili", "youtube", "audio", "web"];

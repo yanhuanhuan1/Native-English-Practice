@@ -2,16 +2,23 @@ import { NextResponse } from "next/server";
 import { requestChatCompletion } from "@/lib/ai/client";
 import { getProviderPreset } from "@/lib/ai/config";
 import { auditDailyTrainingMedia } from "@/lib/daily-training/media-audit";
+import {
+  normalizeLibraryLevel,
+  pickDailyTrainingReserve,
+  type DailyTrainingVideoReserve
+} from "@/data/dailyTrainingVideoLibrary";
 import { buildDailyTrainingMessages } from "@/lib/daily-training/prompt";
 import {
   DailyTrainingParseError,
   parseEnglishTrainingDay
 } from "@/lib/daily-training/schema";
-import type { DailyTrainingHistorySummary } from "@/types/daily-training";
+import type { DailyTrainingHistorySummary, TrainingLevel } from "@/types/daily-training";
 
 interface DailyTrainingRequestBody {
   date?: string;
   dayNumber?: number;
+  level?: TrainingLevel;
+  reserveItem?: DailyTrainingVideoReserve;
   historySummary?: DailyTrainingHistorySummary;
 }
 
@@ -48,6 +55,8 @@ export async function POST(request: Request) {
       ? body.dayNumber
       : 1;
   const historySummary = normalizeHistorySummary(body.historySummary);
+  const level = normalizeTrainingLevel(body.level);
+  const reserveItem = normalizeReserveItem(body.reserveItem, level);
   const settings = resolveServerSettings();
 
   if (!settings) {
@@ -63,7 +72,7 @@ export async function POST(request: Request) {
       baseUrl: settings.baseUrl,
       model: settings.model,
       provider: settings.provider,
-      messages: buildDailyTrainingMessages({ date, dayNumber, historySummary }),
+      messages: buildDailyTrainingMessages({ date, dayNumber, historySummary, level, reserveItem }),
       temperature: 0.35,
       topP: 0.9,
       presencePenalty: 0.2,
@@ -78,6 +87,8 @@ export async function POST(request: Request) {
         ...training,
         date,
         dayNumber,
+        level,
+        selectedReserveId: reserveItem.id,
         completed: false
       }
     });
@@ -99,6 +110,21 @@ export async function POST(request: Request) {
       { status: 502 }
     );
   }
+}
+
+function normalizeTrainingLevel(value?: TrainingLevel): TrainingLevel {
+  return normalizeLibraryLevel(value ?? "IELTS 5.0");
+}
+
+function normalizeReserveItem(
+  value: DailyTrainingVideoReserve | undefined,
+  level: TrainingLevel
+): DailyTrainingVideoReserve {
+  if (value?.id && value.level === normalizeLibraryLevel(level)) {
+    return value;
+  }
+
+  return pickDailyTrainingReserve(level);
 }
 
 function normalizeDate(value?: string): string {

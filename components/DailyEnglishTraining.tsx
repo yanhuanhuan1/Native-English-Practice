@@ -29,6 +29,12 @@ import type {
   SpeakingFeedback,
   TranscriptSegment
 } from "@/types/daily-training";
+import {
+  getLibraryLevelCount,
+  pickDailyTrainingReserve,
+  trainingLibraryLevels,
+  type ExactTrainingLevel
+} from "@/data/dailyTrainingVideoLibrary";
 
 interface DailyTrainingApiResponse {
   training?: DailyTraining;
@@ -45,6 +51,7 @@ interface ServerConfigResponse {
 }
 
 const storageKey = "daily-english-training-records";
+const levelStorageKey = "daily-english-training-level";
 
 const masteryLabels: Record<LearningItemMastery, string> = {
   unknown: "不认识",
@@ -56,6 +63,7 @@ const masteryLabels: Record<LearningItemMastery, string> = {
 export function DailyEnglishTraining() {
   const [records, setRecords] = useState<EnglishTrainingRecord[]>([]);
   const [activeDate] = useState(() => getTodayKey());
+  const [selectedLevel, setSelectedLevel] = useState<ExactTrainingLevel>("IELTS 5.0");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
@@ -63,6 +71,7 @@ export function DailyEnglishTraining() {
 
   useEffect(() => {
     setRecords(loadTrainingRecords());
+    setSelectedLevel(loadSelectedLevel());
 
     let active = true;
     fetch("/api/config")
@@ -94,15 +103,28 @@ export function DailyEnglishTraining() {
   const currentTraining = currentRecord?.training ?? null;
   const nextDayNumber = currentTraining?.dayNumber ?? getNextDayNumber(records);
 
-  async function handleGenerate(regenerate = false) {
+  function handleLevelChange(level: ExactTrainingLevel) {
+    setSelectedLevel(level);
+    persistSelectedLevel(level);
+  }
+
+  async function handleGenerate(regenerate = false, level = selectedLevel) {
     if (aiConfigured === false) {
       setError("AI 服务尚未配置。请先在 Vercel 环境变量里设置 API_KEY。");
       return;
     }
 
-    if (currentTraining && !regenerate) {
+    if (currentTraining && currentTraining.level === level && !regenerate) {
       return;
     }
+
+    const reserveItem = pickDailyTrainingReserve(
+      level,
+      records
+        .map((record) => record.training.selectedReserveId)
+        .filter((item): item is string => !!item),
+      `${activeDate}-${records.length}`
+    );
 
     setIsGenerating(true);
     setError(null);
@@ -115,6 +137,8 @@ export function DailyEnglishTraining() {
         body: JSON.stringify({
           date: activeDate,
           dayNumber: nextDayNumber,
+          level,
+          reserveItem,
           historySummary: buildHistorySummary(records)
         })
       });
@@ -125,7 +149,11 @@ export function DailyEnglishTraining() {
       }
 
       const nextRecords = upsertRecord(records, {
-        training: ensureTrainingDefaults(payload.training),
+        training: ensureTrainingDefaults({
+          ...payload.training,
+          level,
+          selectedReserveId: reserveItem.id
+        }),
         completedSteps: []
       });
       persistRecords(nextRecords);
@@ -170,16 +198,21 @@ export function DailyEnglishTraining() {
           aiConfigured={aiConfigured}
           error={error}
           isGenerating={isGenerating}
-          onGenerate={() => void handleGenerate(false)}
+          selectedLevel={selectedLevel}
+          onGenerate={() => void handleGenerate(false, selectedLevel)}
+          onLevelChange={handleLevelChange}
         />
       ) : (
         <LessonWorkspace
           error={error}
           isGenerating={isGenerating}
           menuOpen={menuOpen}
+          selectedLevel={selectedLevel}
           training={currentTraining}
+          onLevelChange={handleLevelChange}
           onMenuToggle={() => setMenuOpen((open) => !open)}
-          onRegenerate={() => void handleGenerate(true)}
+          onRegenerate={() => void handleGenerate(true, selectedLevel)}
+          onStartLevel={() => void handleGenerate(true, selectedLevel)}
           onUpdate={updateTraining}
         />
       )}
@@ -191,17 +224,23 @@ function LessonWorkspace({
   error,
   isGenerating,
   menuOpen,
+  onLevelChange,
   onMenuToggle,
   onRegenerate,
+  onStartLevel,
   onUpdate,
+  selectedLevel,
   training
 }: {
   error: string | null;
   isGenerating: boolean;
   menuOpen: boolean;
+  onLevelChange: (level: ExactTrainingLevel) => void;
   onMenuToggle: () => void;
   onRegenerate: () => void;
+  onStartLevel: () => void;
   onUpdate: (updater: (training: DailyTraining) => DailyTraining) => void;
+  selectedLevel: ExactTrainingLevel;
   training: DailyTraining;
 }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -316,10 +355,13 @@ function LessonWorkspace({
       <LessonHeader
         isGenerating={isGenerating}
         menuOpen={menuOpen}
+        selectedLevel={selectedLevel}
         progress={progress}
         training={training}
+        onLevelChange={onLevelChange}
         onMenuToggle={onMenuToggle}
         onRegenerate={onRegenerate}
+        onStartLevel={onStartLevel}
       />
       {error ? <p className="daily-lesson-error">{error}</p> : null}
 
@@ -433,18 +475,26 @@ function LessonWorkspace({
 function LessonHeader({
   isGenerating,
   menuOpen,
+  onLevelChange,
   onMenuToggle,
   onRegenerate,
+  onStartLevel,
   progress,
+  selectedLevel,
   training
 }: {
   isGenerating: boolean;
   menuOpen: boolean;
+  onLevelChange: (level: ExactTrainingLevel) => void;
   onMenuToggle: () => void;
   onRegenerate: () => void;
+  onStartLevel: () => void;
   progress: number;
+  selectedLevel: ExactTrainingLevel;
   training: DailyTraining;
 }) {
+  const levelChanged = selectedLevel !== training.level;
+
   return (
     <header className="daily-lesson-header">
       <div>
@@ -456,23 +506,49 @@ function LessonHeader({
           <span>{progress}% complete</span>
         </div>
       </div>
-      <div className="daily-lesson-menu-wrap">
-        <button className="daily-lesson-icon-btn" type="button" onClick={onMenuToggle}>
-          <MoreHorizontal size={20} aria-hidden="true" />
-        </button>
-        {menuOpen ? (
-          <div className="daily-lesson-menu">
-            <button disabled={isGenerating} type="button" onClick={onRegenerate}>
-              {isGenerating ? <Loader2 className="daily-training-spin" size={16} /> : <RotateCcw size={16} />}
-              重新生成课程
-            </button>
-            <a href={training.listening.resource.url} target="_blank" rel="noreferrer">
-              <ExternalLink size={16} />
-              查看原始资源
-            </a>
-            <Link href="/daily-training">返回训练记录</Link>
-          </div>
+      <div className="daily-lesson-header-actions">
+        <label className="daily-lesson-level-inline">
+          <span>等级</span>
+          <select
+            value={selectedLevel}
+            onChange={(event) => onLevelChange(event.target.value as ExactTrainingLevel)}
+          >
+            {trainingLibraryLevels.map((level) => (
+              <option value={level} key={level}>
+                {level} · {getLibraryLevelCount(level)} 条
+              </option>
+            ))}
+          </select>
+        </label>
+        {levelChanged ? (
+          <button
+            className="daily-lesson-primary"
+            disabled={isGenerating}
+            type="button"
+            onClick={onStartLevel}
+          >
+            {isGenerating ? <Loader2 className="daily-training-spin" size={16} /> : <Sparkles size={16} />}
+            开始该等级
+          </button>
         ) : null}
+        <div className="daily-lesson-menu-wrap">
+          <button className="daily-lesson-icon-btn" type="button" onClick={onMenuToggle}>
+            <MoreHorizontal size={20} aria-hidden="true" />
+          </button>
+          {menuOpen ? (
+            <div className="daily-lesson-menu">
+              <button disabled={isGenerating} type="button" onClick={onRegenerate}>
+                {isGenerating ? <Loader2 className="daily-training-spin" size={16} /> : <RotateCcw size={16} />}
+                重新抽取课程
+              </button>
+              <a href={training.listening.resource.url} target="_blank" rel="noreferrer">
+                <ExternalLink size={16} />
+                查看原始资源
+              </a>
+              <Link href="/daily-training">返回训练记录</Link>
+            </div>
+          ) : null}
+        </div>
       </div>
     </header>
   );
@@ -1077,21 +1153,38 @@ function EmptyLesson({
   aiConfigured,
   error,
   isGenerating,
-  onGenerate
+  onGenerate,
+  onLevelChange,
+  selectedLevel
 }: {
   aiConfigured: boolean | null;
   error: string | null;
   isGenerating: boolean;
   onGenerate: () => void;
+  onLevelChange: (level: ExactTrainingLevel) => void;
+  selectedLevel: ExactTrainingLevel;
 }) {
   return (
     <section className="daily-lesson-empty">
       <span>Daily English Training</span>
-      <h1>生成今天的精听课程</h1>
-      <p>进入后直接看视频、逐句精听、跟读和输出。</p>
+      <h1>选择等级，开始今天的精听</h1>
+      <p>每个等级内置 50 条 Bilibili 优先视频储备。开始后会抽取一条，并生成逐句精听、表达提取、跟读和输出任务。</p>
+      <div className="daily-lesson-level-grid">
+        {trainingLibraryLevels.map((level) => (
+          <button
+            aria-pressed={selectedLevel === level}
+            key={level}
+            type="button"
+            onClick={() => onLevelChange(level)}
+          >
+            <strong>{level}</strong>
+            <span>{getLibraryLevelCount(level)} 条储备</span>
+          </button>
+        ))}
+      </div>
       <button disabled={isGenerating || aiConfigured === false} type="button" onClick={onGenerate}>
         {isGenerating ? <Loader2 className="daily-training-spin" size={17} /> : <Sparkles size={17} />}
-        生成今日训练
+        从 {selectedLevel} 开始
       </button>
       {aiConfigured === false ? <p className="daily-lesson-error">AI 服务尚未配置 API_KEY。</p> : null}
       {error ? <p className="daily-lesson-error">{error}</p> : null}
@@ -1126,6 +1219,28 @@ function persistRecords(records: EnglishTrainingRecord[]) {
   }
 
   window.localStorage.setItem(storageKey, JSON.stringify(records.slice(-180)));
+}
+
+function loadSelectedLevel(): ExactTrainingLevel {
+  if (typeof window === "undefined") {
+    return "IELTS 5.0";
+  }
+
+  const savedLevel = window.localStorage.getItem(levelStorageKey);
+
+  return isExactTrainingLevel(savedLevel) ? savedLevel : "IELTS 5.0";
+}
+
+function persistSelectedLevel(level: ExactTrainingLevel) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(levelStorageKey, level);
+}
+
+function isExactTrainingLevel(value: unknown): value is ExactTrainingLevel {
+  return typeof value === "string" && trainingLibraryLevels.includes(value as ExactTrainingLevel);
 }
 
 function upsertRecord(
