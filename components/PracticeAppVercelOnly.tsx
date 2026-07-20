@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, BarChart2, RefreshCcw, RotateCcw, Square, Volume2, X } from "lucide-react";
+import { ArrowLeft, BarChart2, CalendarDays, RefreshCcw, RotateCcw, Square, Volume2, X } from "lucide-react";
+import Link from "next/link";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { VocabText } from "@/components/VocabText";
@@ -554,6 +555,10 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
         </div>
 
         <div className="topbar-actions">
+          <Link className="icon-text-button" href="/daily-training">
+            <CalendarDays size={16} aria-hidden="true" />
+            每日训练
+          </Link>
           {insight.totalAttempts > 0 && (
             <button
               className="icon-text-button"

@@ -1064,6 +1064,7 @@ textarea:focus {
   border-color: var(--border);
   background: var(--surface);
   color: var(--text);
+  text-decoration: none;
 }
 
 .icon-button {
@@ -1873,4 +1874,430 @@ textarea:focus {
   color: var(--accent-strong);
   font-size: 13px;
   font-weight: 600;
+}
+
+.daily-training-page {
+  width: min(1440px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 24px 32px 64px;
+}
+
+.daily-training-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 64px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.daily-training-topbar h1,
+.daily-training-hero h2,
+.daily-training-section h3,
+.daily-training-card h2 {
+  margin: 0;
+}
+
+.daily-training-topbar h1 {
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.daily-training-kicker,
+.daily-training-hero > span,
+.daily-training-section-head small {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.daily-training-link,
+.daily-training-primary,
+.daily-training-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border-radius: var(--radius);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.daily-training-link,
+.daily-training-ghost {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 14px;
+}
+
+.daily-training-primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #06130f;
+  padding: 0 16px;
+}
+
+.daily-training-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.daily-training-link:hover,
+.daily-training-ghost:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.daily-training-shell {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  padding-top: 18px;
+}
+
+.daily-training-sidebar {
+  display: grid;
+  gap: 14px;
+  position: sticky;
+  top: 18px;
+}
+
+.daily-training-main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.daily-training-card,
+.daily-training-hero,
+.daily-training-section,
+.daily-training-empty {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.daily-training-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.daily-training-card-head,
+.daily-training-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.daily-training-card-head svg,
+.daily-training-section-head > span {
+  color: var(--accent-strong);
+}
+
+.daily-training-card h2 {
+  font-size: 15px;
+}
+
+.daily-training-card input {
+  min-height: 42px;
+}
+
+.daily-training-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.daily-training-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.daily-training-stat span,
+.daily-training-muted,
+.daily-training-history-item small,
+.daily-training-resource p,
+.daily-training-task p,
+.daily-training-mini-card p,
+.daily-training-mini-card q {
+  color: var(--text-muted);
+}
+
+.daily-training-stat strong {
+  color: var(--text);
+}
+
+.daily-training-history-list {
+  display: grid;
+  gap: 8px;
+  max-height: 380px;
+  overflow: auto;
+}
+
+.daily-training-history-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+}
+
+.daily-training-history-item[aria-pressed="true"],
+.daily-training-history-item:hover {
+  border-color: var(--accent);
+  background: var(--surface-muted);
+}
+
+.daily-training-history-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.daily-training-error {
+  margin: 0;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  padding: 10px;
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.daily-training-hero {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+}
+
+.daily-training-hero h2 {
+  font-size: 34px;
+  line-height: 1.18;
+}
+
+.daily-training-badges,
+.daily-training-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.daily-training-badges span,
+.daily-training-chip-row span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daily-training-section {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.daily-training-section-head h3 {
+  margin-top: 3px;
+  font-size: 20px;
+}
+
+.daily-training-resource {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.daily-training-resource span,
+.daily-training-task h4,
+.daily-training-mini-card h4 {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.daily-training-resource h4,
+.daily-training-mini-card h4,
+.daily-training-task h4 {
+  margin: 0;
+}
+
+.daily-training-resource h4 {
+  margin-top: 5px;
+  font-size: 18px;
+}
+
+.daily-training-resource p,
+.daily-training-task p,
+.daily-training-mini-card p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
+
+.daily-training-resource-side {
+  display: grid;
+  justify-items: end;
+  align-content: space-between;
+  gap: 12px;
+}
+
+.daily-training-resource-side > span {
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+
+.daily-training-resource-side a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.daily-training-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.daily-training-task,
+.daily-training-mini-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  padding: 14px;
+}
+
+.daily-training-task ul,
+.daily-training-task ol,
+.daily-training-mini-card ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+.daily-training-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.daily-training-mini-card {
+  display: grid;
+  gap: 10px;
+}
+
+.daily-training-mini-card q {
+  line-height: 1.6;
+}
+
+.daily-training-form {
+  display: grid;
+  gap: 12px;
+}
+
+.daily-training-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.daily-training-form label span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.daily-training-form textarea {
+  min-height: 98px;
+  resize: vertical;
+}
+
+.daily-training-empty {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  padding: 32px;
+}
+
+.daily-training-empty span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.daily-training-empty h2 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.daily-training-empty p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.daily-training-spin {
+  animation: daily-training-spin 0.8s linear infinite;
+}
+
+@keyframes daily-training-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 980px) {
+  .daily-training-page {
+    padding: 18px;
+  }
+
+  .daily-training-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .daily-training-shell,
+  .daily-training-two-col,
+  .daily-training-list-grid,
+  .daily-training-resource {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-training-sidebar {
+    position: static;
+  }
+
+  .daily-training-resource-side {
+    justify-items: start;
+  }
 }
