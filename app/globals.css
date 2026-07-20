@@ -2689,6 +2689,19 @@ textarea:focus {
   border-color: rgba(53, 196, 159, 0.45);
 }
 
+.daily-training-complete-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  border: 1px solid rgba(53, 196, 159, 0.5);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
 .daily-training-score-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

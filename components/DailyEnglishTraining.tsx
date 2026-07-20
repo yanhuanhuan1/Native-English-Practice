@@ -96,6 +96,7 @@ export function DailyEnglishTraining() {
   const currentRecord =
     records.find((record) => record.training.date === activeDate) ?? null;
   const currentTraining = currentRecord?.training ?? null;
+  const trainingVersion = currentTraining ? getTrainingVersion(currentTraining) : "";
   const progress = getProgress(records);
   const nextDayNumber = currentTraining?.dayNumber ?? getNextDayNumber(records);
 
@@ -302,7 +303,7 @@ export function DailyEnglishTraining() {
                 onStepChange={setActiveStep}
                 training={currentTraining}
               />
-              <div className="daily-training-step-stage">
+              <div className="daily-training-step-stage" key={`${trainingVersion}-${activeStep}`}>
                 {activeStep === "listening" ? (
                   <ListeningStep training={currentTraining} onDone={() => completeStep("listening")} />
                 ) : null}
@@ -344,6 +345,7 @@ export function DailyEnglishTraining() {
                 {activeStep === "review" ? (
                   <ReviewStep
                     training={currentTraining}
+                    trainingVersion={trainingVersion}
                     onDone={() => completeStep("review")}
                     onUpdateReview={(review) =>
                       updateCurrentTraining((training) => ({ ...training, review }))
@@ -411,6 +413,12 @@ function ListeningStep({
       audioRef.current.playbackRate = speed;
     }
   }, [speed]);
+
+  useEffect(() => {
+    setShowTranscript(false);
+    setLoop(false);
+    setSpeed(1);
+  }, [resource.url, resource.embedUrl]);
 
   return (
     <StepPanel eyebrow="Step 1" title="Listening Input" actionLabel="我听完了，进入表达库" onAction={onDone}>
@@ -566,6 +574,13 @@ function PracticeStep({
   const [builderAnswers, setBuilderAnswers] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState(false);
 
+  useEffect(() => {
+    setFillAnswers({});
+    setReplacementAnswers({});
+    setBuilderAnswers({});
+    setChecked(false);
+  }, [training.practice]);
+
   return (
     <StepPanel eyebrow="Step 3" title="Practice Module" actionLabel="练习完成，去口语输出" onAction={onDone}>
       <section className="daily-training-practice-block">
@@ -657,6 +672,14 @@ function SpeakingStep({
   const [feedback, setFeedback] = useState<SpeakingFeedback | undefined>(training.speaking.feedback);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAnswer(training.speaking.answer ?? "");
+    setAudioUrl(null);
+    setRecording(false);
+    setFeedback(training.speaking.feedback);
+    setError(null);
+  }, [training.speaking.question, training.speaking.answer, training.speaking.feedback]);
 
   async function toggleRecording() {
     if (recording) {
@@ -761,13 +784,19 @@ function SpeakingStep({
 function ReviewStep({
   onDone,
   onUpdateReview,
-  training
+  training,
+  trainingVersion
 }: {
   onDone: () => void;
   onUpdateReview: (review: ReviewItem[]) => void;
   training: DailyTraining;
+  trainingVersion: string;
 }) {
   const [items, setItems] = useState(training.review);
+
+  useEffect(() => {
+    setItems(training.review);
+  }, [training.review, trainingVersion]);
 
   function updateItem(expressionId: string, updates: Partial<ReviewItem>) {
     const nextItems = items.map((item) =>
@@ -778,7 +807,19 @@ function ReviewStep({
   }
 
   return (
-    <StepPanel eyebrow="Step 5" title="Today's Review" actionLabel="完成今日训练" onAction={onDone}>
+    <StepPanel
+      eyebrow="Step 5"
+      title="Today's Review"
+      actionLabel={training.completed ? "今日已完成" : "完成今日训练"}
+      actionDisabled={training.completed}
+      onAction={onDone}
+    >
+      {training.completed ? (
+        <div className="daily-training-complete-note">
+          <CheckCircle2 size={18} aria-hidden="true" />
+          <span>今日训练已完成，记录已保存到本地。</span>
+        </div>
+      ) : null}
       <div className="daily-training-reading-card">
         <span>Daily Reading Card</span>
         <h3>{training.reading.title}</h3>
@@ -880,12 +921,14 @@ function MasteryControl({
 
 function StepPanel({
   actionLabel,
+  actionDisabled = false,
   children,
   eyebrow,
   onAction,
   title
 }: {
   actionLabel: string;
+  actionDisabled?: boolean;
   children: ReactNode;
   eyebrow: string;
   onAction: () => void;
@@ -899,7 +942,12 @@ function StepPanel({
       </div>
       {children}
       <div className="daily-training-step-footer">
-        <button className="daily-training-primary" type="button" onClick={onAction}>
+        <button
+          className="daily-training-primary"
+          disabled={actionDisabled}
+          type="button"
+          onClick={onAction}
+        >
           {actionLabel}
           <ChevronRight size={17} aria-hidden="true" />
         </button>
@@ -1111,6 +1159,21 @@ function getNextDayNumber(records: EnglishTrainingRecord[]): number {
 function getNextStep(step: TrainingStep): TrainingStep | null {
   const index = steps.findIndex((item) => item.key === step);
   return steps[index + 1]?.key ?? null;
+}
+
+function getTrainingVersion(training: DailyTraining): string {
+  return [
+    training.date,
+    training.dayNumber,
+    training.topic,
+    training.listening.resource.url,
+    training.listening.resource.embedUrl,
+    training.reading.title,
+    training.speaking.question,
+    training.expressions.map((expression) => expression.id).join(",")
+  ]
+    .filter(Boolean)
+    .join("|");
 }
 
 function getTodayKey(): string {
