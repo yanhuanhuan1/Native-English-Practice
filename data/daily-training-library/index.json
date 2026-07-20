@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-07-20T08:18:47.272Z",
+  "targetPerLevel": 50,
+  "levels": [
+    {
+      "level": "IELTS 5.0",
+      "videoFile": "ielts-5-0-videos.json",
+      "lessonFile": null,
+      "candidateCount": 50,
+      "lessonCount": 0
+    },
+    {
+      "level": "IELTS 5.5",
+      "videoFile": "ielts-5-5-videos.json",
+      "lessonFile": null,
+      "candidateCount": 50,
+      "lessonCount": 0
+    },
+    {
+      "level": "IELTS 6.0",
+      "videoFile": "ielts-6-0-videos.json",
+      "lessonFile": null,
+      "candidateCount": 50,
+      "lessonCount": 0
+    },
+    {
+      "level": "IELTS 6.5",
+      "videoFile": "ielts-6-5-videos.json",
+      "lessonFile": null,
+      "candidateCount": 50,
+      "lessonCount": 0
+    },
+    {
+      "level": "IELTS 7.0+",
+      "videoFile": "ielts-7-0plus-videos.json",
+      "lessonFile": null,
+      "candidateCount": 50,
+      "lessonCount": 0
+    }
+  ]
+}

@@ -1,4 +1,9 @@
 import type { ListeningPlayerType, TrainingLevel } from "@/types/daily-training";
+import ielts50Videos from "@/data/daily-training-library/ielts-5-0-videos.json";
+import ielts55Videos from "@/data/daily-training-library/ielts-5-5-videos.json";
+import ielts60Videos from "@/data/daily-training-library/ielts-6-0-videos.json";
+import ielts65Videos from "@/data/daily-training-library/ielts-6-5-videos.json";
+import ielts70Videos from "@/data/daily-training-library/ielts-7-0plus-videos.json";
 
 export type ExactTrainingLevel =
   | "IELTS 5.0"
@@ -166,7 +171,7 @@ const levelConfigs: Array<{
   }
 ];
 
-export const dailyTrainingVideoLibrary: DailyTrainingVideoReserve[] = levelConfigs.flatMap(
+const seedTrainingVideoLibrary: DailyTrainingVideoReserve[] = levelConfigs.flatMap(
   (config) =>
     config.topics.flatMap((topic, topicIndex) =>
       config.series.map((series, seriesIndex) => {
@@ -190,6 +195,17 @@ export const dailyTrainingVideoLibrary: DailyTrainingVideoReserve[] = levelConfi
       })
     )
 );
+
+const generatedVideoLibrary = [
+  ...ielts50Videos,
+  ...ielts55Videos,
+  ...ielts60Videos,
+  ...ielts65Videos,
+  ...ielts70Videos
+] as DailyTrainingVideoReserve[];
+
+export const dailyTrainingVideoLibrary: DailyTrainingVideoReserve[] =
+  generatedVideoLibrary.length >= 250 ? generatedVideoLibrary : seedTrainingVideoLibrary;
 
 export function getReserveItemsForLevel(level: TrainingLevel): DailyTrainingVideoReserve[] {
   const exactLevel = normalizeLibraryLevel(level);

@@ -6,6 +6,8 @@
     "predev": "node scripts/prepare-dev-cache.mjs",
     "dev": "next dev",
     "build": "next build",
+    "build-training-library": "node scripts/build-daily-training-library.mjs",
+    "build-training-candidates": "node scripts/build-daily-training-library.mjs --candidates-only",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit"
   },
