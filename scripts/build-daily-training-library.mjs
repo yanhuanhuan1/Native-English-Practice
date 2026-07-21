@@ -1,21 +1,17 @@
-import crypto from "node:crypto";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
+const execFileAsync = promisify(execFile);
 const rootDir = process.cwd();
 const outputDir = path.join(rootDir, "data", "daily-training-library");
-const headers = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
-  Referer: "https://www.bilibili.com"
-};
-
-const mixinKeyEncTab = [
-  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
-  33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
-  61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62,
-  11, 36, 20, 34, 44, 52
-];
+const args = new Set(process.argv.slice(2));
+const candidatesOnly = args.has("--candidates-only");
+const generateLessons = args.has("--generate-lessons") && !candidatesOnly;
+const targetPerLevel = numberArg("--target-per-level", 50);
+const resultsPerQuery = numberArg("--results-per-query", 12);
+const onlyLevel = stringArg("--level");
 
 const levels = [
   {
@@ -25,11 +21,11 @@ const levels = [
     topics: [
       "workplace self introduction",
       "daily small talk",
-      "asking for help at work",
-      "ordering coffee",
+      "asking for help",
+      "ordering food coffee",
       "making simple plans",
       "casual apology",
-      "clarifying a simple point",
+      "clarifying a point",
       "daily routine conversation",
       "reacting to good news",
       "basic customer service"
@@ -37,9 +33,9 @@ const levels = [
     sources: [
       "BBC Learning English English at Work",
       "VOA Learning English everyday English",
-      "British Council LearnEnglish A2 B1",
-      "TED Ed short English lesson",
-      "职场英语 英文字幕"
+      "British Council LearnEnglish speaking",
+      "TED-Ed English lesson",
+      "English conversation for beginners official"
     ]
   },
   {
@@ -62,8 +58,8 @@ const levels = [
       "BBC Learning English workplace English",
       "VOA Learning English conversation",
       "British Council LearnEnglish listening B1",
-      "TED Ed English subtitles",
-      "商务英语 听力 英文字幕"
+      "TED-Ed English subtitles",
+      "business English conversation official"
     ]
   },
   {
@@ -86,8 +82,8 @@ const levels = [
       "BBC Learning English 6 Minute English",
       "VOA Learning English As It Is",
       "British Council LearnEnglish B2 listening",
-      "TED Ed business English subtitles",
-      "英语精听 B2 英文字幕"
+      "TED-Ed business English",
+      "BBC News Review Learning English"
     ]
   },
   {
@@ -110,14 +106,14 @@ const levels = [
       "BBC Learning English business English",
       "VOA Learning English news words",
       "British Council workplace communication",
-      "TED Ed business communication",
-      "雅思听力 6.5 英文字幕"
+      "TED-Ed business communication",
+      "TED talk English subtitles business"
     ]
   },
   {
     level: "IELTS 7.0+",
     difficulty: "B2+ / IELTS 7.0+",
-    minutes: [8, 15],
+    minutes: [8, 18],
     topics: [
       "leadership communication",
       "presenting an argument",
@@ -131,122 +127,96 @@ const levels = [
       "culture and identity"
     ],
     sources: [
-      "TED talk English subtitles business",
+      "TED talk English subtitles",
       "BBC Learning English advanced listening",
       "VOA Learning English technology report",
-      "British Council advanced workplace English",
-      "雅思口语 7分 英文字幕"
+      "British Council advanced English",
+      "BBC ideas English"
     ]
   }
 ];
 
-const args = new Set(process.argv.slice(2));
-const candidatesOnly = args.has("--candidates-only");
-const generateLessons = args.has("--generate-lessons") && !candidatesOnly;
-const targetPerLevel = numberArg("--target-per-level", 50);
-const searchPages = numberArg("--search-pages", 2);
-const resultsPerQuery = numberArg("--results-per-query", 10);
-const onlyLevel = stringArg("--level");
-
 await fs.mkdir(outputDir, { recursive: true });
 await loadDotEnvFile(path.join(rootDir, ".env.local"));
-
-const wbiKey = await getWbiMixinKey();
-const allCandidates = [];
-const allLessons = [];
 
 const selectedLevels = onlyLevel
   ? levels.filter((config) => config.level === onlyLevel)
   : levels;
 
 for (const config of selectedLevels) {
-  const levelCandidates = await collectLevelCandidates(config);
-  const selectedCandidates = levelCandidates.slice(0, targetPerLevel);
-  allCandidates.push(...selectedCandidates);
-  await writeJson(
-    path.join(outputDir, `${levelToFile(config.level)}-videos.json`),
-    selectedCandidates
-  );
+  const candidates = await collectLevelCandidates(config);
+  await writeJson(path.join(outputDir, `${levelToFile(config.level)}-videos.json`), candidates);
 
-  console.log(
-    `${config.level}: selected ${selectedCandidates.length}/${targetPerLevel} videos, ` +
-      `${selectedCandidates.filter((item) => item.transcriptSegments.length > 0).length} with extractable subtitles`
-  );
+  console.log(`${config.level}: selected ${candidates.length}/${targetPerLevel} videos`);
 
   if (generateLessons) {
     const lessons = [];
 
-    for (const candidate of selectedCandidates) {
-      if (!candidate.transcriptSegments.length) {
-        continue;
-      }
-
+    for (const candidate of candidates.filter((item) => item.transcriptSegments.length > 0)) {
       const lesson = await generateLesson(candidate);
       lessons.push(lesson);
       await writeJson(path.join(outputDir, `${candidate.id}.json`), lesson);
     }
 
-    allLessons.push(...lessons);
     await writeJson(path.join(outputDir, `${levelToFile(config.level)}-lessons.json`), lessons);
   }
 }
 
-await writeJson(path.join(outputDir, "video-candidates.json"), allCandidates);
-await writeJson(
-  path.join(outputDir, "index.json"),
-  {
-    generatedAt: new Date().toISOString(),
-    targetPerLevel,
-    levels: await buildIndexLevels(generateLessons)
-  }
-);
+const allCandidates = [];
 
-async function buildIndexLevels(includeLessons) {
-  return Promise.all(
+for (const config of levels) {
+  allCandidates.push(
+    ...(await readJsonArray(path.join(outputDir, `${levelToFile(config.level)}-videos.json`)))
+  );
+}
+
+await writeJson(path.join(outputDir, "video-candidates.json"), allCandidates);
+await writeJson(path.join(outputDir, "index.json"), {
+  generatedAt: new Date().toISOString(),
+  targetPerLevel,
+  sourcePriority: ["YouTube", "BBC Learning English", "British Council", "VOA Learning English", "TED-Ed", "Bilibili"],
+  levels: await Promise.all(
     levels.map(async (config) => ({
       level: config.level,
       videoFile: `${levelToFile(config.level)}-videos.json`,
-      lessonFile: includeLessons ? `${levelToFile(config.level)}-lessons.json` : null,
+      lessonFile: generateLessons ? `${levelToFile(config.level)}-lessons.json` : null,
       candidateCount: await countJsonArray(path.join(outputDir, `${levelToFile(config.level)}-videos.json`)),
-      lessonCount: includeLessons
+      lessonCount: generateLessons
         ? await countJsonArray(path.join(outputDir, `${levelToFile(config.level)}-lessons.json`))
         : 0
     }))
-  );
-}
+  )
+});
 
 async function collectLevelCandidates(config) {
   const found = new Map();
 
+  for (const source of config.sources) {
+    if (found.size >= targetPerLevel) break;
+
+    const results = await searchYoutube(`${source} English subtitles`);
+    addResults(config, source, results, found);
+  }
+
   for (const topic of config.topics) {
-    for (const source of config.sources) {
-      if (found.size >= targetPerLevel * 2) {
-        break;
-      }
+    if (found.size >= targetPerLevel) break;
 
-      const keyword = `${source} ${topic} 英文字幕 英语听力`;
-      const results = await searchBilibili(keyword, searchPages);
+    const source = config.sources[found.size % config.sources.length];
+    const results = await searchYoutube(`${source} ${topic}`);
+    addResults(config, topic, results, found);
+  }
 
-      for (const result of results.slice(0, resultsPerQuery)) {
-        const expanded = await expandVideoResult(config, topic, result);
+  for (const official of officialWebFallbacks(config)) {
+    if (found.size >= targetPerLevel) break;
+    found.set(official.key, official);
+  }
 
-        for (const candidate of expanded) {
-          if (!found.has(candidate.key) && isUsefulCandidate(candidate, config)) {
-            found.set(candidate.key, candidate);
-          }
-
-          if (found.size >= targetPerLevel * 2) {
-            break;
-          }
-        }
-      }
-
-      await sleep(360);
-    }
+  for (const fallback of bilibiliFallbacks(config)) {
+    if (found.size >= targetPerLevel) break;
+    found.set(fallback.key, fallback);
   }
 
   return [...found.values()]
-    .filter(limitPagesPerBvid(10))
     .sort((left, right) => scoreCandidate(right) - scoreCandidate(left))
     .slice(0, targetPerLevel)
     .map((candidate, index) => ({
@@ -255,117 +225,197 @@ async function collectLevelCandidates(config) {
     }));
 }
 
-async function searchBilibili(keyword, pages) {
-  const results = [];
+function addResults(config, focus, results, found) {
+  for (const result of results) {
+    if (found.size >= targetPerLevel) break;
 
-  for (let page = 1; page <= pages; page += 1) {
-    const query = signWbi({
-      search_type: "video",
-      keyword,
-      page
-    });
-    const url = `https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`;
-    const data = await fetchJson(url).catch((error) => {
-      console.warn(`skip search page: ${error.message}`);
-      return null;
-    });
+    const candidate = toYoutubeCandidate(config, focus, result);
 
-    if (!data || data.code !== 0 || !Array.isArray(data.data?.result)) {
-      continue;
+    if (candidate && !found.has(candidate.key)) {
+      found.set(candidate.key, candidate);
     }
-
-    results.push(...data.data.result.filter((item) => item?.bvid));
   }
-
-  return results;
 }
 
-async function expandVideoResult(config, topic, result) {
-  const bvid = result.bvid;
-  const view = await fetchJson(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`).catch(
-    () => null
-  );
+async function searchYoutube(query) {
+  try {
+    const { stdout } = await execFileAsync(
+      "yt-dlp",
+      [
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
+        `ytsearch${resultsPerQuery}:${query}`
+      ],
+      {
+        cwd: rootDir,
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024 * 12,
+        timeout: 90000
+      }
+    );
 
-  if (!view || view.code !== 0 || !Array.isArray(view.data?.pages)) {
+    return stdout
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch (error) {
+    console.warn(`skip YouTube query "${query}": ${error.message}`);
     return [];
   }
-
-  const pages = view.data.pages.slice(0, 20);
-  const expanded = [];
-
-  for (const page of pages) {
-    const subtitleResult = await fetchTranscript(bvid, page.cid);
-    const pageNo = page.page ?? 1;
-    const title = cleanText(view.data.title);
-    const part = cleanText(page.part ?? "");
-    const durationSeconds = page.duration ?? result.duration ?? 0;
-
-    expanded.push({
-      key: `${bvid}-${pageNo}`,
-      level: config.level,
-      topic: toTitle(topic),
-      title: part ? `${title} - ${part}` : title,
-      source: "Bilibili",
-      url: `https://www.bilibili.com/video/${bvid}${pageNo > 1 ? `?p=${pageNo}` : ""}`,
-      embedUrl: `https://player.bilibili.com/player.html?bvid=${bvid}&page=${pageNo}&autoplay=0`,
-      bvid,
-      cid: page.cid,
-      page: pageNo,
-      playerType: "bilibili",
-      duration: formatDuration(durationSeconds),
-      durationSeconds,
-      difficulty: config.difficulty,
-      focus: toTitle(topic),
-      keywords: [topic, cleanText(result.title ?? ""), cleanText(result.tag ?? "")].filter(Boolean),
-      whySuitable: "Bilibili 可播放候选；如含外挂字幕，可直接生成逐句精听课程。",
-      transcriptSource: subtitleResult.segments.length ? subtitleResult.source : "unavailable",
-      transcriptSegments: subtitleResult.segments
-    });
-  }
-
-  return expanded;
 }
 
-async function fetchTranscript(bvid, cid) {
-  const player = await fetchJson(
-    `https://api.bilibili.com/x/player/wbi/v2?${signWbi({ bvid, cid })}`
-  ).catch(() => null);
-  const subtitles = player?.data?.subtitle?.subtitles;
+function toYoutubeCandidate(config, focus, result) {
+  const durationSeconds = Number(result.duration) || 0;
+  const [minMinutes, maxMinutes] = config.minutes;
 
-  if (!Array.isArray(subtitles) || subtitles.length === 0) {
-    return { source: "unavailable", segments: [] };
+  if (durationSeconds < minMinutes * 60 || durationSeconds > maxMinutes * 60) {
+    return null;
   }
 
-  const preferred =
-    subtitles.find((item) => /en|eng|英语|英文/i.test(`${item.lan} ${item.lan_doc}`)) ??
-    subtitles[0];
-  const subtitleUrl = normalizeUrl(preferred.subtitle_url);
+  const text = `${result.title ?? ""} ${result.channel ?? ""} ${result.description ?? ""}`;
 
-  if (!subtitleUrl) {
-    return { source: "unavailable", segments: [] };
+  if (/live|playlist|compilation|music|song|kids|cartoon|minecraft|reaction/i.test(text)) {
+    return null;
   }
 
-  const subtitle = await fetchJson(subtitleUrl);
-  const body = Array.isArray(subtitle.body) ? subtitle.body : [];
+  const officialScore = scoreOfficialChannel(result);
+
+  if (officialScore < 26) {
+    return null;
+  }
+
+  const videoId = result.id;
+
+  if (!videoId) {
+    return null;
+  }
 
   return {
-    source: preferred.type === 1 ? "official" : "auto",
-    segments: body
-      .filter((item) => typeof item.content === "string" && item.content.trim())
-      .slice(0, 80)
-      .map((item, index) => ({
-        id: `segment-${index + 1}`,
-        startTime: Number(item.from) || index * 6,
-        endTime: Number(item.to) || Number(item.from) + 5 || index * 6 + 5,
-        speaker: "Speaker",
-        text: cleanText(item.content),
-        translation: "",
-        vocabularyIds: [],
-        expressionIds: [],
-        markedUnclear: false,
-        completed: false
-      }))
+    key: `youtube-${videoId}`,
+    level: config.level,
+    topic: toTitle(focus),
+    title: cleanText(result.title),
+    source: result.channel ? `YouTube · ${cleanText(result.channel)}` : "YouTube",
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    embedUrl: `https://www.youtube.com/embed/${videoId}`,
+    videoId,
+    playerType: "youtube",
+    duration: formatDuration(durationSeconds),
+    durationSeconds,
+    difficulty: config.difficulty,
+    focus: toTitle(focus),
+    keywords: [
+      focus,
+      cleanText(result.channel ?? ""),
+      cleanText(result.uploader ?? ""),
+      "YouTube",
+      "official media"
+    ].filter(Boolean),
+    whySuitable:
+      "YouTube 优先来源，来自英语学习或官方媒体频道，适合在站内嵌入并使用播放器字幕。",
+    transcriptSource: "unavailable",
+    transcriptSegments: [],
+    channel: cleanText(result.channel ?? ""),
+    channelId: result.channel_id ?? "",
+    thumbnail: result.thumbnails?.at?.(-1)?.url ?? "",
+    viewCount: Number(result.view_count) || 0
   };
+}
+
+function officialWebFallbacks(config) {
+  const providers = [
+    {
+      name: "BBC Learning English",
+      url: "https://www.bbc.co.uk/learningenglish",
+      keyword: "BBC Learning English"
+    },
+    {
+      name: "British Council LearnEnglish",
+      url: "https://learnenglish.britishcouncil.org/",
+      keyword: "British Council LearnEnglish"
+    },
+    {
+      name: "VOA Learning English",
+      url: "https://learningenglish.voanews.com/",
+      keyword: "VOA Learning English"
+    },
+    {
+      name: "TED-Ed",
+      url: "https://ed.ted.com/",
+      keyword: "TED-Ed"
+    }
+  ];
+
+  return config.topics.flatMap((topic) =>
+    providers.map((provider) => ({
+      key: `official-${levelToFile(config.level)}-${slugify(provider.name)}-${slugify(topic)}`,
+      level: config.level,
+      topic: toTitle(topic),
+      title: `${toTitle(topic)} - ${provider.name}`,
+      source: provider.name,
+      url: `${provider.url}?q=${encodeURIComponent(topic)}`,
+      playerType: "web",
+      duration: `${config.minutes[0]}-${config.minutes[1]} min`,
+      durationSeconds: config.minutes[0] * 60,
+      difficulty: config.difficulty,
+      focus: toTitle(topic),
+      keywords: [provider.keyword, topic, "official website"],
+      whySuitable: "官方媒体学习资源兜底入口；当 YouTube 候选不足时用于人工筛选补库。",
+      transcriptSource: "unavailable",
+      transcriptSegments: []
+    }))
+  );
+}
+
+function bilibiliFallbacks(config) {
+  return config.topics.map((topic) => ({
+    key: `bilibili-${levelToFile(config.level)}-${slugify(topic)}`,
+    level: config.level,
+    topic: toTitle(topic),
+    title: `${toTitle(topic)} - Bilibili fallback`,
+    source: "Bilibili",
+    url: `https://search.bilibili.com/all?keyword=${encodeURIComponent(`${topic} 英语听力 英文字幕`)}`,
+    playerType: "web",
+    duration: `${config.minutes[0]}-${config.minutes[1]} min`,
+    durationSeconds: config.minutes[0] * 60,
+    difficulty: config.difficulty,
+    focus: toTitle(topic),
+    keywords: [topic, "Bilibili", "fallback"],
+    whySuitable: "最后兜底来源；仅在 YouTube 和官方媒体候选不足时使用。",
+    transcriptSource: "unavailable",
+    transcriptSegments: []
+  }));
+}
+
+function scoreCandidate(candidate) {
+  let score = 0;
+
+  if (candidate.playerType === "youtube") score += 80;
+  if (candidate.source.includes("BBC Learning English")) score += 35;
+  if (candidate.source.includes("British Council")) score += 32;
+  if (candidate.source.includes("VOA")) score += 30;
+  if (candidate.source.includes("TED")) score += 28;
+  if (candidate.source.includes("Bilibili")) score -= 80;
+  if (candidate.viewCount > 100000) score += 8;
+  if (candidate.durationSeconds >= 180 && candidate.durationSeconds <= 720) score += 8;
+
+  return score;
+}
+
+function scoreOfficialChannel(result) {
+  const channel = `${result.channel ?? result.uploader ?? ""}`.toLowerCase().trim();
+  const text = `${result.channel ?? ""} ${result.uploader ?? ""} ${result.channel_id ?? ""}`.toLowerCase();
+
+  if (text.includes("bbc learning english")) return 50;
+  if (text.includes("voa learning english")) return 48;
+  if (text.includes("british council")) return 46;
+  if (channel === "ted-ed" || channel === "ted ed") return 44;
+  if (channel === "ted" || channel === "tedx talks") return 38;
+  if (text.includes("bbc world service")) return 36;
+  if (text.includes("wall street journal") || text.includes("dw ")) return 30;
+
+  return 0;
 }
 
 async function generateLesson(candidate) {
@@ -377,23 +427,6 @@ async function generateLesson(candidate) {
 
   const baseUrl = (process.env.API_BASE_URL?.trim() || "https://api.deepseek.com").replace(/\/$/, "");
   const model = process.env.API_MODEL?.trim() || "deepseek-chat";
-  const messages = [
-    {
-      role: "system",
-      content:
-        "You generate strict JSON for an English listening lesson. Use only the provided transcript. Do not invent video facts. Chinese feedback, English examples."
-    },
-    {
-      role: "user",
-      content: JSON.stringify({
-        task:
-          "Create learningItems, dictation, comprehension, shadowing, outputTask, lessonReview for this video. Return one DailyTraining JSON object.",
-        candidate,
-        required:
-          "6-10 learningItems from transcript, 3-5 dictation segmentIds, 2-3 comprehension questions, one 30-60 second speaking output task."
-      })
-    }
-  ];
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -402,9 +435,19 @@ async function generateLesson(candidate) {
     },
     body: JSON.stringify({
       model,
-      messages,
       temperature: 0.2,
-      response_format: { type: "json_object" }
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Generate strict JSON for a listening lesson. Use only verified transcriptSegments if provided. Do not invent transcript text."
+        },
+        {
+          role: "user",
+          content: JSON.stringify({ candidate })
+        }
+      ]
     })
   });
   const payload = await response.json();
@@ -415,107 +458,6 @@ async function generateLesson(candidate) {
   }
 
   return JSON.parse(content);
-}
-
-function isUsefulCandidate(candidate, config) {
-  const [minMinutes, maxMinutes] = config.minutes;
-  const minSeconds = minMinutes * 60;
-  const maxSeconds = maxMinutes * 60;
-  const text = `${candidate.title} ${candidate.keywords.join(" ")}`.toLowerCase();
-
-  if (candidate.durationSeconds < minSeconds || candidate.durationSeconds > maxSeconds * 1.8) {
-    return false;
-  }
-
-  if (/纯音乐|伴奏|直播|reaction|游戏|解说/i.test(text)) {
-    return false;
-  }
-
-  return /english|英语|bbc|voa|ted|ielts|雅思|听力|口语|字幕/i.test(text);
-}
-
-function scoreCandidate(candidate) {
-  const text = `${candidate.title} ${candidate.keywords.join(" ")}`.toLowerCase();
-  let score = 0;
-
-  if (candidate.transcriptSegments.length) score += 100;
-  if (/bbc|voa|ted|british council/i.test(text)) score += 20;
-  if (/英文字幕|英语字幕|字幕|cc/i.test(text)) score += 12;
-  if (/听力|口语|conversation|work|business/i.test(text)) score += 10;
-  if (candidate.durationSeconds >= 180 && candidate.durationSeconds <= 900) score += 8;
-
-  return score;
-}
-
-function limitPagesPerBvid(maxPages) {
-  const counts = new Map();
-
-  return (candidate) => {
-    const count = counts.get(candidate.bvid) ?? 0;
-
-    if (count >= maxPages) {
-      return false;
-    }
-
-    counts.set(candidate.bvid, count + 1);
-    return true;
-  };
-}
-
-async function getWbiMixinKey() {
-  const nav = await fetchJson("https://api.bilibili.com/x/web-interface/nav");
-  const imgKey = nav.data?.wbi_img?.img_url?.split("/").pop()?.split(".")[0];
-  const subKey = nav.data?.wbi_img?.sub_url?.split("/").pop()?.split(".")[0];
-
-  if (!imgKey || !subKey) {
-    throw new Error("Unable to resolve Bilibili WBI key.");
-  }
-
-  const original = `${imgKey}${subKey}`;
-  return mixinKeyEncTab.map((index) => original[index]).join("").slice(0, 32);
-}
-
-function signWbi(params) {
-  const filtered = /[!'()*]/g;
-  const withTimestamp = {
-    ...params,
-    wts: Math.round(Date.now() / 1000)
-  };
-  const query = Object.keys(withTimestamp)
-    .sort()
-    .map(
-      (key) =>
-        `${encodeURIComponent(key)}=${encodeURIComponent(String(withTimestamp[key]).replace(filtered, ""))}`
-    )
-    .join("&");
-  const wRid = crypto.createHash("md5").update(query + wbiKey).digest("hex");
-
-  return `${query}&w_rid=${wRid}`;
-}
-
-async function fetchJson(url) {
-  let lastStatus = 0;
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const response = await fetch(url, { headers });
-    lastStatus = response.status;
-
-    if (response.ok) {
-      return response.json();
-    }
-
-    if (![412, 429, 500, 502, 503].includes(response.status)) {
-      break;
-    }
-
-    await sleep(600 * attempt);
-  }
-
-  throw new Error(`HTTP ${lastStatus} for ${url}`);
-}
-
-async function writeJson(filePath, data) {
-  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
 }
 
 async function loadDotEnvFile(filePath) {
@@ -534,6 +476,24 @@ async function loadDotEnvFile(filePath) {
   }
 }
 
+async function writeJson(filePath, data) {
+  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+}
+
+async function readJsonArray(filePath) {
+  try {
+    const parsed = JSON.parse(await fs.readFile(filePath, "utf8"));
+
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function countJsonArray(filePath) {
+  return (await readJsonArray(filePath)).length;
+}
+
 function numberArg(name, fallback) {
   const raw = process.argv.find((arg) => arg.startsWith(`${name}=`));
   const value = raw ? Number(raw.split("=")[1]) : NaN;
@@ -547,31 +507,14 @@ function stringArg(name) {
   return raw ? raw.slice(name.length + 1) : "";
 }
 
-async function countJsonArray(filePath) {
-  try {
-    const parsed = JSON.parse(await fs.readFile(filePath, "utf8"));
-
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-}
-
 function cleanText(value) {
   return String(value ?? "")
     .replace(/<[^>]+>/g, "")
     .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function normalizeUrl(value) {
-  if (typeof value !== "string" || !value.trim()) {
-    return "";
-  }
-
-  return value.startsWith("//") ? `https:${value}` : value;
 }
 
 function formatDuration(seconds) {
@@ -584,10 +527,10 @@ function levelToFile(level) {
   return level.toLowerCase().replace(/\+/g, "plus").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-function toTitle(value) {
-  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+function slugify(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function toTitle(value) {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
 }

@@ -17,34 +17,33 @@ const requestTimeoutMs = 8_000;
 
 const fallbackListeningResources: ListeningResource[] = [
   {
-    title: "04 Do you work in an English environment - BBC Learning English",
-    source: "Bilibili / BBC Learning English",
-    url: "https://www.bilibili.com/video/BV1y54y1S7A4/",
-    embedUrl: "https://player.bilibili.com/player.html?bvid=BV1y54y1S7A4&page=1&autoplay=0",
+    title: "How to prepare for an interview - English at Work",
+    source: "YouTube / BBC Learning English",
+    url: "https://www.youtube.com/watch?v=KN2jyw6D1ak",
+    embedUrl: "https://www.youtube.com/embed/KN2jyw6D1ak",
     level: "A2-B1",
     duration: "about 3 minutes",
-    playerType: "bilibili",
-    whySuitable: "Bilibili source with BBC Learning English workplace content; suitable for short spoken workplace input."
+    playerType: "youtube",
+    whySuitable: "BBC Learning English workplace content; suitable for short spoken workplace input."
   },
   {
-    title: "BBC Learning English collection",
-    source: "Bilibili / BBC Learning English",
-    url: "https://www.bilibili.com/video/BV1AE411G7hd/",
-    embedUrl: "https://player.bilibili.com/player.html?bvid=BV1AE411G7hd&page=1&autoplay=0",
+    title: "Introduce yourself and make some friends - English at Work",
+    source: "YouTube / BBC Learning English",
+    url: "https://www.youtube.com/watch?v=1AmS9h8g3E4",
+    embedUrl: "https://www.youtube.com/embed/1AmS9h8g3E4",
     level: "A2-B1",
-    duration: "short episodes",
-    playerType: "bilibili",
-    whySuitable: "Large Bilibili collection of short BBC Learning English clips for repeated listening practice."
+    duration: "about 4 minutes",
+    playerType: "youtube",
+    whySuitable: "Short BBC Learning English workplace clip for repeated listening practice."
   },
   {
-    title: "Daily English Dictation",
-    source: "Bilibili / Daily English Dictation",
-    url: "https://www.bilibili.com/video/BV1U7411a7xG/",
-    embedUrl: "https://player.bilibili.com/player.html?bvid=BV1U7411a7xG&page=1&autoplay=0",
-    level: "A2-B1",
+    title: "BBC Learning English 6 Minute English",
+    source: "YouTube / BBC Learning English",
+    url: "https://www.youtube.com/@bbclearningenglish/search?query=6%20Minute%20English",
+    level: "B1-B2",
     duration: "short episodes",
-    playerType: "bilibili",
-    whySuitable: "Bilibili listening practice series with clear daily English input."
+    playerType: "web",
+    whySuitable: "Official BBC Learning English channel search for short listening practice."
   }
 ];
 
@@ -73,19 +72,19 @@ async function auditListeningResource(resource: ListeningResource): Promise<List
     if (validFallback) {
       return {
         ...validFallback,
-        whySuitable: `${validFallback.whySuitable} The original AI resource did not pass playback validation, so it was replaced with a verified Bilibili resource.`
+        whySuitable: `${validFallback.whySuitable} The original AI resource did not pass playback validation, so it was replaced with a verified YouTube or official media resource.`
       };
     }
   }
 
   return {
-    title: "Bilibili English learning search",
-    source: "Bilibili",
-    url: "https://search.bilibili.com/all?keyword=BBC%20Learning%20English",
+    title: "BBC Learning English official channel",
+    source: "YouTube / BBC Learning English",
+    url: "https://www.youtube.com/@bbclearningenglish",
     level: "IELTS 5.0-6.0",
     duration: "5 minutes",
     playerType: "web",
-    whySuitable: "No verified embeddable video was available, so the module falls back to a Bilibili search page."
+    whySuitable: "No verified embeddable video was available, so the module falls back to an official YouTube channel page."
   };
 }
 
@@ -96,6 +95,10 @@ async function validateListeningResource(
     return validateBilibiliResource(resource);
   }
 
+  if (resource.playerType === "youtube" || extractYoutubeId(resource.embedUrl ?? resource.url)) {
+    return validateYoutubeResource(resource);
+  }
+
   if (resource.playerType === "audio" && resource.audioUrl) {
     return (await isReachableMedia(resource.audioUrl)) ? resource : null;
   }
@@ -104,8 +107,22 @@ async function validateListeningResource(
     return (await isUsableWebPage(resource.url)) ? resource : null;
   }
 
-  // YouTube is not accepted as the core listening source for China-facing training.
   return null;
+}
+
+function validateYoutubeResource(resource: ListeningResource): ListeningResource | null {
+  const videoId = extractYoutubeId(resource.embedUrl ?? resource.url);
+
+  if (!videoId) {
+    return null;
+  }
+
+  return {
+    ...resource,
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    embedUrl: `https://www.youtube.com/embed/${videoId}`,
+    playerType: "youtube"
+  };
 }
 
 async function validateBilibiliResource(
@@ -263,6 +280,29 @@ function extractBilibiliId(url: string): string | null {
     const match = url.match(/BV[a-zA-Z0-9]+/);
     return match?.[0] ?? null;
   }
+}
+
+function extractYoutubeId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.hostname.includes("youtu.be")) {
+      return parsed.pathname.replace("/", "") || null;
+    }
+
+    if (parsed.hostname.includes("youtube.com")) {
+      if (parsed.pathname.startsWith("/embed/")) {
+        return parsed.pathname.split("/")[2] ?? null;
+      }
+
+      return parsed.searchParams.get("v");
+    }
+  } catch {
+    const match = url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{6,})/);
+    return match?.[1] ?? null;
+  }
+
+  return null;
 }
 
 function formatDuration(seconds?: number): string | undefined {

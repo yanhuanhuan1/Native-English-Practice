@@ -68,6 +68,7 @@ export function DailyEnglishTraining() {
   const [error, setError] = useState<string | null>(null);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const generationRequestRef = useRef(0);
 
   useEffect(() => {
     setRecords(loadTrainingRecords());
@@ -129,6 +130,8 @@ export function DailyEnglishTraining() {
     setIsGenerating(true);
     setError(null);
     setMenuOpen(false);
+    const requestId = generationRequestRef.current + 1;
+    generationRequestRef.current = requestId;
 
     try {
       const response = await fetch("/api/daily-training", {
@@ -148,6 +151,10 @@ export function DailyEnglishTraining() {
         throw new Error(payload.error ?? "生成失败，请稍后重试。");
       }
 
+      if (requestId !== generationRequestRef.current) {
+        return;
+      }
+
       const nextRecords = upsertRecord(records, {
         training: ensureTrainingDefaults({
           ...payload.training,
@@ -159,9 +166,13 @@ export function DailyEnglishTraining() {
       persistRecords(nextRecords);
       setRecords(nextRecords);
     } catch (generateError) {
-      setError(generateError instanceof Error ? generateError.message : "生成失败，请稍后重试。");
+      if (requestId === generationRequestRef.current) {
+        setError(generateError instanceof Error ? generateError.message : "生成失败，请稍后重试。");
+      }
     } finally {
-      setIsGenerating(false);
+      if (requestId === generationRequestRef.current) {
+        setIsGenerating(false);
+      }
     }
   }
 
@@ -204,6 +215,7 @@ export function DailyEnglishTraining() {
         />
       ) : (
         <LessonWorkspace
+          key={getTrainingInstanceKey(currentTraining)}
           error={error}
           isGenerating={isGenerating}
           menuOpen={menuOpen}
@@ -259,6 +271,7 @@ function LessonWorkspace({
     [training.transcriptSegments]
   );
   const firstSegmentId = training.transcriptSegments[0]?.id ?? "";
+  const trainingInstanceKey = getTrainingInstanceKey(training);
 
   const progress = getLessonProgress(training);
   const activeSegment =
@@ -387,6 +400,7 @@ function LessonWorkspace({
       </section>
 
       <TranscriptPanel
+        key={`transcript-${trainingInstanceKey}`}
         activeSegmentId={activeSegmentId}
         learningItems={training.learningItems}
         loopSegmentId={loopSegmentId}
@@ -401,6 +415,7 @@ function LessonWorkspace({
       />
 
       <LearningItemsPanel
+        key={`items-${trainingInstanceKey}`}
         items={training.learningItems}
         onPlaySentence={(item) => {
           const segment = findSegmentByTime(training.transcriptSegments, item.sourceStartTime);
@@ -419,6 +434,7 @@ function LessonWorkspace({
       />
 
       <DictationPanel
+        key={`dictation-${trainingInstanceKey}`}
         exercises={training.dictation}
         segments={training.transcriptSegments}
         onPlaySegment={seekTo}
@@ -426,6 +442,7 @@ function LessonWorkspace({
       />
 
       <ShadowingPanel
+        key={`shadowing-${trainingInstanceKey}`}
         shadowing={training.shadowing}
         segments={training.transcriptSegments}
         onPlaySegment={seekTo}
@@ -433,11 +450,13 @@ function LessonWorkspace({
       />
 
       <ComprehensionPanel
+        key={`comprehension-${trainingInstanceKey}`}
         questions={training.comprehension}
         onUpdate={(comprehension) => onUpdate((draft) => ({ ...draft, comprehension }))}
       />
 
       <OutputPanel
+        key={`output-${trainingInstanceKey}`}
         learningItems={training.learningItems}
         outputTask={training.outputTask}
         topic={training.topic}
@@ -1351,6 +1370,19 @@ function getLessonProgress(training: DailyTraining): number {
   ];
 
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function getTrainingInstanceKey(training: DailyTraining): string {
+  return [
+    training.date,
+    training.level,
+    training.selectedReserveId,
+    training.listening.resource.url,
+    training.transcriptSegments.map((segment) => `${segment.id}:${segment.startTime}:${segment.endTime}`).join("|"),
+    training.learningItems.map((item) => item.id).join("|")
+  ]
+    .filter(Boolean)
+    .join("::");
 }
 
 function ensureSegmentInDictation(

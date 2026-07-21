@@ -13,7 +13,7 @@
 
 ## 当前已落地
 
-- 每个等级已生成 50 条 Bilibili 优先视频储备。
+- 每个等级已生成 50 条 YouTube 优先视频储备。
 - 数据位置：`data/daily-training-library/`
 - 网站抽取源：`data/dailyTrainingVideoLibrary.ts`
 - 批量脚本：`scripts/build-daily-training-library.mjs`
@@ -28,7 +28,7 @@
 
 ## 批量重建视频库
 
-只重建视频候选：
+只重建视频候选，默认优先搜索 YouTube 官方/高质量媒体频道：
 
 ```bash
 npm run build-training-candidates -- --target-per-level=50 --search-pages=5 --results-per-query=16
@@ -62,6 +62,19 @@ npm run build-training-library -- --generate-lessons --target-per-level=50
 
 注意：脚本只会为有可提取字幕的视频生成完整课程。Bilibili 很多视频是画面硬字幕，接口拿不到逐句字幕，这类视频不能自动生成精听课程包。
 
+## 来源优先级
+
+当前优先级：
+
+1. YouTube 官方/高质量媒体频道
+2. BBC Learning English 官方站
+3. British Council LearnEnglish 官方站
+4. VOA Learning English 官方站
+5. TED-Ed 官方站
+6. Bilibili 兜底
+
+如果 YouTube 对应等级不足 50 条，脚本会用官方媒体网站入口补足，不会优先使用 Bilibili。
+
 ## 字幕规则
 
 可以用于完整精听课程的来源优先级：
@@ -79,7 +92,7 @@ npm run build-training-library -- --generate-lessons --target-per-level=50
 
 ## 推荐后续路线
 
-第一步先使用当前 250 条真实视频 URL 作为储备。
+第一步先使用当前 250 条真实 YouTube/官方媒体 URL 作为储备。
 
 第二步逐批补 transcript：
 

@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-07-20T08:18:47.272Z",
+  "generatedAt": "2026-07-20T08:40:30.607Z",
   "targetPerLevel": 50,
+  "sourcePriority": [
+    "YouTube",
+    "BBC Learning English",
+    "British Council",
+    "VOA Learning English",
+    "TED-Ed",
+    "Bilibili"
+  ],
   "levels": [
     {
       "level": "IELTS 5.0",

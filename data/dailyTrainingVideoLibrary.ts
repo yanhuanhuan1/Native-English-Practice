@@ -17,7 +17,7 @@ export interface DailyTrainingVideoReserve {
   level: ExactTrainingLevel;
   topic: string;
   title: string;
-  source: "Bilibili";
+  source: string;
   url: string;
   embedUrl?: string;
   playerType: ListeningPlayerType;
