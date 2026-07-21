@@ -10,10 +10,7 @@ import {
   MoreHorizontal,
   Play,
   RotateCcw,
-  Search,
-  Sparkles,
-  Volume2,
-  XCircle
+  Sparkles
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -258,7 +255,8 @@ function LessonWorkspace({
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const [playerSeed, setPlayerSeed] = useState(0);
   const [activeSegmentId, setActiveSegmentId] = useState(training.transcriptSegments[0]?.id ?? "");
-  const [loopSegmentId, setLoopSegmentId] = useState<string | null>(null);
+  const [requestedStartTime, setRequestedStartTime] = useState<number | undefined>();
+  const [iframeAutoplay, setIframeAutoplay] = useState(false);
   const [iframePlayback, setIframePlayback] = useState<{
     startedAt: number;
     startTime: number;
@@ -280,23 +278,31 @@ function LessonWorkspace({
 
   useEffect(() => {
     setActiveSegmentId(firstSegmentId);
-    setLoopSegmentId(null);
+    setRequestedStartTime(undefined);
+    setIframeAutoplay(false);
     setIframePlayback(null);
     setPlayerSeed((seed) => seed + 1);
   }, [firstSegmentId, training.listening.resource.url, transcriptVersion]);
 
   function seekTo(segment: TranscriptSegment) {
     setActiveSegmentId(segment.id);
+    seekToTime(segment.startTime);
+  }
+
+  function seekToTime(startTime: number) {
+    const safeStartTime = Math.max(0, Math.floor(startTime));
+    setRequestedStartTime(safeStartTime);
+    setIframeAutoplay(true);
 
     if (mediaRef.current) {
-      mediaRef.current.currentTime = segment.startTime;
+      mediaRef.current.currentTime = safeStartTime;
       void mediaRef.current.play().catch(() => undefined);
       return;
     }
 
     setIframePlayback({
       startedAt: Date.now(),
-      startTime: segment.startTime
+      startTime: safeStartTime
     });
     setPlayerSeed((seed) => seed + 1);
   }
@@ -317,22 +323,10 @@ function LessonWorkspace({
         setActiveSegmentId(nextActive.id);
       }
 
-      if (loopSegmentId) {
-        const loopSegment = training.transcriptSegments.find((segment) => segment.id === loopSegmentId);
-
-        if (loopSegment && currentTime >= loopSegment.endTime) {
-          setActiveSegmentId(loopSegment.id);
-          setIframePlayback({
-            startedAt: Date.now(),
-            startTime: loopSegment.startTime
-          });
-          setPlayerSeed((seed) => seed + 1);
-        }
-      }
     }, 500);
 
     return () => window.clearInterval(timer);
-  }, [iframePlayback, loopSegmentId, training.transcriptSegments]);
+  }, [iframePlayback, training.transcriptSegments]);
 
   function handleTimeUpdate() {
     const currentTime = mediaRef.current?.currentTime ?? 0;
@@ -344,23 +338,6 @@ function LessonWorkspace({
       setActiveSegmentId(nextActive.id);
     }
 
-    if (loopSegmentId) {
-      const loopSegment = training.transcriptSegments.find((segment) => segment.id === loopSegmentId);
-
-      if (loopSegment && currentTime >= loopSegment.endTime && mediaRef.current) {
-        mediaRef.current.currentTime = loopSegment.startTime;
-      }
-    }
-  }
-
-  function toggleUnclear(segment: TranscriptSegment) {
-    onUpdate((draft) => ({
-      ...draft,
-      transcriptSegments: draft.transcriptSegments.map((item) =>
-        item.id === segment.id ? { ...item, markedUnclear: !item.markedUnclear } : item
-      ),
-      dictation: ensureSegmentInDictation(draft.dictation, segment)
-    }));
   }
 
   return (
@@ -383,7 +360,9 @@ function LessonWorkspace({
           <EmbeddedPlayer
             key={`${training.listening.resource.embedUrl ?? training.listening.resource.url}-${playerSeed}`}
             activeSegment={activeSegment}
+            autoplay={iframeAutoplay}
             mediaRef={mediaRef}
+            requestedStartTime={requestedStartTime}
             resource={training.listening.resource}
             onTimeUpdate={handleTimeUpdate}
           />
@@ -399,21 +378,6 @@ function LessonWorkspace({
         </div>
       </section>
 
-      <TranscriptPanel
-        key={`transcript-${trainingInstanceKey}`}
-        activeSegmentId={activeSegmentId}
-        learningItems={training.learningItems}
-        loopSegmentId={loopSegmentId}
-        segments={training.transcriptSegments}
-        transcriptSource={training.transcriptSource}
-        onLoop={(segment) => {
-          setLoopSegmentId((current) => (current === segment.id ? null : segment.id));
-          seekTo(segment);
-        }}
-        onSeek={seekTo}
-        onToggleUnclear={toggleUnclear}
-      />
-
       <LearningItemsPanel
         key={`items-${trainingInstanceKey}`}
         items={training.learningItems}
@@ -421,7 +385,10 @@ function LessonWorkspace({
           const segment = findSegmentByTime(training.transcriptSegments, item.sourceStartTime);
           if (segment) {
             seekTo(segment);
+            return;
           }
+
+          seekToTime(item.sourceStartTime);
         }}
         onUpdateItem={(itemId, updates) =>
           onUpdate((draft) => ({
@@ -575,16 +542,21 @@ function LessonHeader({
 
 function EmbeddedPlayer({
   activeSegment,
+  autoplay,
   mediaRef,
   onTimeUpdate,
+  requestedStartTime,
   resource
 }: {
   activeSegment?: TranscriptSegment;
+  autoplay: boolean;
   mediaRef: React.MutableRefObject<HTMLVideoElement | HTMLAudioElement | null>;
   onTimeUpdate: () => void;
+  requestedStartTime?: number;
   resource: DailyTraining["listening"]["resource"];
 }) {
-  const timedEmbedUrl = appendStartTime(resource.embedUrl, activeSegment?.startTime);
+  const startTime = requestedStartTime ?? activeSegment?.startTime;
+  const timedEmbedUrl = appendStartTime(resource.embedUrl, startTime, autoplay);
 
   if (resource.playerType === "bilibili" && resource.embedUrl) {
     return (
@@ -623,109 +595,6 @@ function EmbeddedPlayer({
   }
 
   return <iframe src={resource.url} title={resource.title} />;
-}
-
-function TranscriptPanel({
-  activeSegmentId,
-  learningItems,
-  loopSegmentId,
-  onLoop,
-  onSeek,
-  onToggleUnclear,
-  segments,
-  transcriptSource
-}: {
-  activeSegmentId: string;
-  learningItems: LearningItem[];
-  loopSegmentId: string | null;
-  onLoop: (segment: TranscriptSegment) => void;
-  onSeek: (segment: TranscriptSegment) => void;
-  onToggleUnclear: (segment: TranscriptSegment) => void;
-  segments: TranscriptSegment[];
-  transcriptSource: DailyTraining["transcriptSource"];
-}) {
-  const [query, setQuery] = useState("");
-  const [speaker, setSpeaker] = useState("all");
-  const [showChinese, setShowChinese] = useState(false);
-  const speakers = useMemo(
-    () => Array.from(new Set(segments.map((segment) => segment.speaker))).filter(Boolean),
-    [segments]
-  );
-  const filteredSegments = segments.filter((segment) => {
-    const matchesQuery = [segment.text, segment.translation, segment.speaker]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
-      .includes(query.toLowerCase());
-    const matchesSpeaker = speaker === "all" || segment.speaker === speaker;
-    return matchesQuery && matchesSpeaker;
-  });
-
-  return (
-    <section className="daily-lesson-section">
-      <div className="daily-lesson-section-head">
-        <h2>同步逐句转录</h2>
-        <span>{transcriptSource === "unavailable" ? "字幕不可用" : `${segments.length} 句`}</span>
-      </div>
-      <div className="daily-lesson-transcript-tools">
-        <label>
-          <Search size={16} aria-hidden="true" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索转录文本" />
-        </label>
-        <select value={speaker} onChange={(event) => setSpeaker(event.target.value)}>
-          <option value="all">全部说话人</option>
-          {speakers.map((item) => (
-            <option value={item} key={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={() => setShowChinese((value) => !value)}>
-          {showChinese ? "只显示英文" : "显示中文"}
-        </button>
-      </div>
-      {segments.length === 0 ? (
-        <div className="daily-lesson-empty-note">
-          当前资源没有可验证逐句字幕，不能用于精听。请通过更多菜单重新生成课程。
-        </div>
-      ) : (
-        <div className="daily-lesson-transcript-list">
-          {filteredSegments.map((segment) => (
-            <article
-              className="daily-lesson-segment"
-              data-active={segment.id === activeSegmentId}
-              key={segment.id}
-              onClick={() => onSeek(segment)}
-            >
-              <div className="daily-lesson-segment-top">
-                <button type="button" onClick={(event) => stopAndRun(event, () => onSeek(segment))}>
-                  {formatTime(segment.startTime)}
-                </button>
-                <strong>{segment.speaker}</strong>
-                {segment.markedUnclear ? <span>已加入精听</span> : null}
-              </div>
-              <p>{renderLearningText(segment.text, learningItems)}</p>
-              {showChinese && segment.translation ? <small>{segment.translation}</small> : null}
-              <div className="daily-lesson-segment-actions">
-                <button type="button" onClick={(event) => stopAndRun(event, () => onToggleUnclear(segment))}>
-                  <XCircle size={15} />
-                  没听清
-                </button>
-                <button type="button" onClick={(event) => stopAndRun(event, () => onLoop(segment))}>
-                  <RotateCcw size={15} />
-                  {loopSegmentId === segment.id ? "停止循环" : "循环本句"}
-                </button>
-                <button type="button" onClick={(event) => stopAndRun(event, () => onSeek(segment))}>
-                  <Volume2 size={15} />
-                  跟读
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
 }
 
 function LearningItemsPanel({
@@ -1187,7 +1056,7 @@ function EmptyLesson({
     <section className="daily-lesson-empty">
       <span>Daily English Training</span>
       <h1>选择等级，开始今天的精听</h1>
-      <p>每个等级内置 50 条 Bilibili 优先视频储备。开始后会抽取一条，并生成逐句精听、表达提取、跟读和输出任务。</p>
+      <p>每个等级内置 50 条 YouTube/官方媒体优先视频储备。开始后会抽取一条，并生成精听、表达提取、跟读和输出任务。</p>
       <div className="daily-lesson-level-grid">
         {trainingLibraryLevels.map((level) => (
           <button
@@ -1385,28 +1254,6 @@ function getTrainingInstanceKey(training: DailyTraining): string {
     .join("::");
 }
 
-function ensureSegmentInDictation(
-  exercises: DictationExercise[],
-  segment: TranscriptSegment
-): DictationExercise[] {
-  if (exercises.some((exercise) => exercise.segmentId === segment.id)) {
-    return exercises;
-  }
-
-  return [
-    {
-      segmentId: segment.id,
-      userAnswer: "",
-      correctText: segment.text,
-      missingWords: [],
-      incorrectWords: [],
-      completed: false,
-      hint: "你标记了这句没听清。"
-    },
-    ...exercises
-  ].slice(0, 5);
-}
-
 function mergeReviewItems(review: ReviewItem[], items: LearningItem[]): ReviewItem[] {
   const nextItems = items.map((item) => ({
     expressionId: item.id,
@@ -1441,53 +1288,28 @@ function normalizeWords(value: string): string[] {
     .filter(Boolean);
 }
 
-function renderLearningText(text: string, items: LearningItem[]) {
-  const targets = items
-    .map((item) => item.text)
-    .filter((item) => item.length > 2)
-    .sort((left, right) => right.length - left.length);
-
-  if (!targets.length) {
-    return text;
-  }
-
-  const pattern = new RegExp(`(${targets.map(escapeRegExp).join("|")})`, "gi");
-
-  return text.split(pattern).map((part, index) => {
-    const match = items.find((item) => item.text.toLowerCase() === part.toLowerCase());
-    return match ? (
-      <mark title={match.meaning} key={`${part}-${index}`}>
-        {part}
-      </mark>
-    ) : (
-      part
-    );
-  });
-}
-
-function appendStartTime(url?: string, startTime?: number): string | undefined {
-  if (!url || typeof startTime !== "number") {
+function appendStartTime(url?: string, startTime?: number, autoplay = false): string | undefined {
+  if (!url) {
     return url;
   }
 
   try {
     const nextUrl = new URL(url);
 
-    if (nextUrl.hostname.includes("bilibili")) {
+    if (nextUrl.hostname.includes("bilibili") && typeof startTime === "number") {
       nextUrl.searchParams.set("t", String(Math.floor(startTime)));
-    } else if (nextUrl.hostname.includes("youtube")) {
+      nextUrl.searchParams.set("autoplay", autoplay ? "1" : "0");
+    } else if (nextUrl.hostname.includes("youtube") && typeof startTime === "number") {
       nextUrl.searchParams.set("start", String(Math.floor(startTime)));
+      nextUrl.searchParams.set("autoplay", autoplay ? "1" : "0");
+    } else if (autoplay && nextUrl.hostname.includes("youtube")) {
+      nextUrl.searchParams.set("autoplay", "1");
     }
 
     return nextUrl.toString();
   } catch {
     return url;
   }
-}
-
-function stopAndRun(event: React.MouseEvent, callback: () => void) {
-  event.stopPropagation();
-  callback();
 }
 
 function getLearningTypeLabel(type: LearningItem["type"]): string {
@@ -1503,16 +1325,6 @@ function getLearningTypeLabel(type: LearningItem["type"]): string {
   }
 }
 
-function formatTime(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.floor(seconds % 60);
-  return `${minutes}:${rest.toString().padStart(2, "0")}`;
-}
-
 function getTodayKey(): string {
   return new Date().toLocaleDateString("en-CA");
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
