@@ -28,6 +28,7 @@ import type {
 } from "@/types/daily-training";
 import {
   getLibraryLevelCount,
+  normalizeLibraryLevel,
   pickDailyTrainingReserve,
   trainingLibraryLevels,
   type ExactTrainingLevel
@@ -221,6 +222,7 @@ export function DailyEnglishTraining() {
           onLevelChange={handleLevelChange}
           onMenuToggle={() => setMenuOpen((open) => !open)}
           onRegenerate={() => void handleGenerate(true, selectedLevel)}
+          onRefreshLevel={(level) => void handleGenerate(true, level)}
           onStartLevel={() => void handleGenerate(true, selectedLevel)}
           onUpdate={updateTraining}
         />
@@ -236,6 +238,7 @@ function LessonWorkspace({
   onLevelChange,
   onMenuToggle,
   onRegenerate,
+  onRefreshLevel,
   onStartLevel,
   onUpdate,
   selectedLevel,
@@ -247,6 +250,7 @@ function LessonWorkspace({
   onLevelChange: (level: ExactTrainingLevel) => void;
   onMenuToggle: () => void;
   onRegenerate: () => void;
+  onRefreshLevel: (level: ExactTrainingLevel) => void;
   onStartLevel: () => void;
   onUpdate: (updater: (training: DailyTraining) => DailyTraining) => void;
   selectedLevel: ExactTrainingLevel;
@@ -254,6 +258,30 @@ function LessonWorkspace({
 }) {
   const trainingInstanceKey = getTrainingInstanceKey(training);
   const progress = getLessonProgress(training);
+
+  function completeLesson() {
+    onUpdate((draft) => ({
+      ...draft,
+      completed: true,
+      stepStatus: {
+        listening: true,
+        expression: true,
+        practice: true,
+        speaking: true,
+        review: true
+      }
+    }));
+
+    window.setTimeout(() => {
+      const shouldRefresh = window.confirm(
+        `本课已完成。要随机刷新一套 ${training.level} 的新训练吗？`
+      );
+
+      if (shouldRefresh) {
+        onRefreshLevel(normalizeLibraryLevel(training.level));
+      }
+    }, 0);
+  }
 
   return (
     <section className="daily-lesson-shell">
@@ -341,19 +369,7 @@ function LessonWorkspace({
             review: mergeReviewItems(draft.review, draft.learningItems.slice(0, 3))
           }))
         }
-        onComplete={() =>
-          onUpdate((draft) => ({
-            ...draft,
-            completed: true,
-            stepStatus: {
-              listening: true,
-              expression: true,
-              practice: true,
-              speaking: true,
-              review: true
-            }
-          }))
-        }
+        onComplete={completeLesson}
       />
     </section>
   );
