@@ -117,12 +117,13 @@ export function DailyEnglishTraining() {
       return;
     }
 
+    const historyRecords = records.filter((record) => record.training.date !== activeDate);
     const reserveItem = pickDailyTrainingReserve(
       level,
       records
         .map((record) => record.training.selectedReserveId)
         .filter((item): item is string => !!item),
-      `${activeDate}-${records.length}`
+      `${activeDate}-${level}-${Date.now()}-${Math.random()}`
     );
 
     setIsGenerating(true);
@@ -140,7 +141,7 @@ export function DailyEnglishTraining() {
           dayNumber: nextDayNumber,
           level,
           reserveItem,
-          historySummary: buildHistorySummary(records)
+          historySummary: buildHistorySummary(historyRecords)
         })
       });
       const payload = (await response.json().catch(() => ({}))) as DailyTrainingApiResponse;
@@ -154,7 +155,7 @@ export function DailyEnglishTraining() {
       }
 
       const nextRecords = upsertRecord(records, {
-        training: ensureTrainingDefaults({
+        training: prepareFreshTraining({
           ...payload.training,
           level,
           selectedReserveId: reserveItem.id
@@ -1101,6 +1102,70 @@ function ensureTrainingDefaults(training: DailyTraining): DailyTraining {
       speakingPracticeCount: 0,
       reviewAccuracy: 0
     }
+  };
+}
+
+function prepareFreshTraining(training: DailyTraining): DailyTraining {
+  const freshTraining = ensureTrainingDefaults(training);
+
+  return {
+    ...freshTraining,
+    activeStep: "listening",
+    stepStatus: {
+      listening: false,
+      expression: false,
+      practice: false,
+      speaking: false,
+      review: false
+    },
+    transcriptSegments: freshTraining.transcriptSegments.map((segment) => ({
+      ...segment,
+      markedUnclear: false,
+      completed: false
+    })),
+    learningItems: freshTraining.learningItems.map((item) => ({
+      ...item,
+      saved: false,
+      mastery: "unknown"
+    })),
+    dictation: freshTraining.dictation.map((exercise) => ({
+      ...exercise,
+      userAnswer: "",
+      missingWords: [],
+      incorrectWords: [],
+      completed: false
+    })),
+    comprehension: freshTraining.comprehension.map((question) => {
+      const freshQuestion: ComprehensionQuestion = { ...question };
+      delete freshQuestion.userAnswer;
+
+      return {
+        ...freshQuestion,
+        completed: false
+      };
+    }),
+    shadowing: {
+      ...freshTraining.shadowing,
+      recordings: {},
+      completed: false
+    },
+    outputTask: {
+      prompt: freshTraining.outputTask.prompt,
+      requiredItemIds: freshTraining.outputTask.requiredItemIds,
+      completed: false
+    },
+    lessonReview: {
+      ...freshTraining.lessonReview,
+      addedToReview: false
+    },
+    review: freshTraining.review.map((item) => {
+      const freshItem: ReviewItem = { ...item };
+      delete freshItem.userSentence;
+      delete freshItem.correct;
+
+      return freshItem;
+    }),
+    completed: false
   };
 }
 

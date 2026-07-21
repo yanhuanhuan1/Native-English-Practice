@@ -63,6 +63,7 @@ export function buildDailyTrainingMessages({
         JSON.stringify(reserveItem, null, 2),
         "",
         "Use the reserve item as the source intent. Keep the topic, difficulty and focus aligned with it.",
+        "Do not copy expressions, sentences, dictation items, or topics from Recent state. Recent state is only for difficulty awareness.",
         "",
         "Recent state:",
         JSON.stringify(historySummary, null, 2),
