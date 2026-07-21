@@ -13,7 +13,7 @@ import {
   Sparkles
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ComprehensionQuestion,
   DailyTraining,
@@ -252,93 +252,8 @@ function LessonWorkspace({
   selectedLevel: ExactTrainingLevel;
   training: DailyTraining;
 }) {
-  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
-  const [playerSeed, setPlayerSeed] = useState(0);
-  const [activeSegmentId, setActiveSegmentId] = useState(training.transcriptSegments[0]?.id ?? "");
-  const [requestedStartTime, setRequestedStartTime] = useState<number | undefined>();
-  const [iframeAutoplay, setIframeAutoplay] = useState(false);
-  const [iframePlayback, setIframePlayback] = useState<{
-    startedAt: number;
-    startTime: number;
-  } | null>(null);
-  const transcriptVersion = useMemo(
-    () =>
-      training.transcriptSegments
-        .map((segment) => `${segment.id}:${segment.startTime}:${segment.endTime}`)
-        .join("|"),
-    [training.transcriptSegments]
-  );
-  const firstSegmentId = training.transcriptSegments[0]?.id ?? "";
   const trainingInstanceKey = getTrainingInstanceKey(training);
-
   const progress = getLessonProgress(training);
-  const activeSegment =
-    training.transcriptSegments.find((segment) => segment.id === activeSegmentId) ??
-    training.transcriptSegments[0];
-
-  useEffect(() => {
-    setActiveSegmentId(firstSegmentId);
-    setRequestedStartTime(undefined);
-    setIframeAutoplay(false);
-    setIframePlayback(null);
-    setPlayerSeed((seed) => seed + 1);
-  }, [firstSegmentId, training.listening.resource.url, transcriptVersion]);
-
-  function seekTo(segment: TranscriptSegment) {
-    setActiveSegmentId(segment.id);
-    seekToTime(segment.startTime);
-  }
-
-  function seekToTime(startTime: number) {
-    const safeStartTime = Math.max(0, Math.floor(startTime));
-    setRequestedStartTime(safeStartTime);
-    setIframeAutoplay(true);
-
-    if (mediaRef.current) {
-      mediaRef.current.currentTime = safeStartTime;
-      void mediaRef.current.play().catch(() => undefined);
-      return;
-    }
-
-    setIframePlayback({
-      startedAt: Date.now(),
-      startTime: safeStartTime
-    });
-    setPlayerSeed((seed) => seed + 1);
-  }
-
-  useEffect(() => {
-    if (mediaRef.current || !iframePlayback || training.transcriptSegments.length === 0) {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      const elapsedSeconds = (Date.now() - iframePlayback.startedAt) / 1000;
-      const currentTime = iframePlayback.startTime + elapsedSeconds;
-      const nextActive = training.transcriptSegments.find(
-        (segment) => currentTime >= segment.startTime && currentTime <= segment.endTime
-      );
-
-      if (nextActive) {
-        setActiveSegmentId(nextActive.id);
-      }
-
-    }, 500);
-
-    return () => window.clearInterval(timer);
-  }, [iframePlayback, training.transcriptSegments]);
-
-  function handleTimeUpdate() {
-    const currentTime = mediaRef.current?.currentTime ?? 0;
-    const nextActive = training.transcriptSegments.find(
-      (segment) => currentTime >= segment.startTime && currentTime <= segment.endTime
-    );
-
-    if (nextActive && nextActive.id !== activeSegmentId) {
-      setActiveSegmentId(nextActive.id);
-    }
-
-  }
 
   return (
     <section className="daily-lesson-shell">
@@ -357,15 +272,7 @@ function LessonWorkspace({
 
       <section className="daily-lesson-video-block">
         <div className="daily-lesson-player">
-          <EmbeddedPlayer
-            key={`${training.listening.resource.embedUrl ?? training.listening.resource.url}-${playerSeed}`}
-            activeSegment={activeSegment}
-            autoplay={iframeAutoplay}
-            mediaRef={mediaRef}
-            requestedStartTime={requestedStartTime}
-            resource={training.listening.resource}
-            onTimeUpdate={handleTimeUpdate}
-          />
+          <EmbeddedPlayer resource={training.listening.resource} />
         </div>
         <div className="daily-lesson-resource-line">
           <strong>{training.listening.resource.title}</strong>
@@ -381,15 +288,9 @@ function LessonWorkspace({
       <LearningItemsPanel
         key={`items-${trainingInstanceKey}`}
         items={training.learningItems}
-        onPlaySentence={(item) => {
-          const segment = findSegmentByTime(training.transcriptSegments, item.sourceStartTime);
-          if (segment) {
-            seekTo(segment);
-            return;
-          }
-
-          seekToTime(item.sourceStartTime);
-        }}
+        onSpeakItem={(item) =>
+          speakTrainingText(item.sourceSentence || item.reusableExample || item.text)
+        }
         onUpdateItem={(itemId, updates) =>
           onUpdate((draft) => ({
             ...draft,
@@ -404,7 +305,7 @@ function LessonWorkspace({
         key={`dictation-${trainingInstanceKey}`}
         exercises={training.dictation}
         segments={training.transcriptSegments}
-        onPlaySegment={seekTo}
+        onSpeakSegment={(segment) => speakTrainingText(segment.text)}
         onUpdate={(dictation) => onUpdate((draft) => ({ ...draft, dictation }))}
       />
 
@@ -412,7 +313,7 @@ function LessonWorkspace({
         key={`shadowing-${trainingInstanceKey}`}
         shadowing={training.shadowing}
         segments={training.transcriptSegments}
-        onPlaySegment={seekTo}
+        onSpeakSegment={(segment) => speakTrainingText(segment.text)}
         onUpdate={(shadowing) => onUpdate((draft) => ({ ...draft, shadowing }))}
       />
 
@@ -540,31 +441,14 @@ function LessonHeader({
   );
 }
 
-function EmbeddedPlayer({
-  activeSegment,
-  autoplay,
-  mediaRef,
-  onTimeUpdate,
-  requestedStartTime,
-  resource
-}: {
-  activeSegment?: TranscriptSegment;
-  autoplay: boolean;
-  mediaRef: React.MutableRefObject<HTMLVideoElement | HTMLAudioElement | null>;
-  onTimeUpdate: () => void;
-  requestedStartTime?: number;
-  resource: DailyTraining["listening"]["resource"];
-}) {
-  const startTime = requestedStartTime ?? activeSegment?.startTime;
-  const timedEmbedUrl = appendStartTime(resource.embedUrl, startTime, autoplay);
-
+function EmbeddedPlayer({ resource }: { resource: DailyTraining["listening"]["resource"] }) {
   if (resource.playerType === "bilibili" && resource.embedUrl) {
     return (
       <iframe
         allow="autoplay; fullscreen; picture-in-picture"
         allowFullScreen
         scrolling="no"
-        src={timedEmbedUrl}
+        src={resource.embedUrl}
         title={resource.title}
       />
     );
@@ -575,23 +459,14 @@ function EmbeddedPlayer({
       <iframe
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
-        src={timedEmbedUrl}
+        src={resource.embedUrl}
         title={resource.title}
       />
     );
   }
 
   if (resource.playerType === "audio" && resource.audioUrl) {
-    return (
-      <audio
-        ref={(node) => {
-          mediaRef.current = node;
-        }}
-        controls
-        src={resource.audioUrl}
-        onTimeUpdate={onTimeUpdate}
-      />
-    );
+    return <audio controls src={resource.audioUrl} />;
   }
 
   return <iframe src={resource.url} title={resource.title} />;
@@ -599,11 +474,11 @@ function EmbeddedPlayer({
 
 function LearningItemsPanel({
   items,
-  onPlaySentence,
+  onSpeakItem,
   onUpdateItem
 }: {
   items: LearningItem[];
-  onPlaySentence: (item: LearningItem) => void;
+  onSpeakItem: (item: LearningItem) => void;
   onUpdateItem: (itemId: string, updates: Partial<LearningItem>) => void;
 }) {
   return (
@@ -629,9 +504,9 @@ function LearningItemsPanel({
             </div>
             <q>{item.reusableExample}</q>
             <div className="daily-lesson-learning-actions">
-              <button type="button" onClick={() => onPlaySentence(item)}>
+              <button type="button" onClick={() => onSpeakItem(item)}>
                 <Play size={15} />
-                播放原句
+                朗读短句
               </button>
               <button type="button" onClick={() => onUpdateItem(item.id, { saved: !item.saved })}>
                 {item.saved ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
@@ -659,12 +534,12 @@ function LearningItemsPanel({
 
 function DictationPanel({
   exercises,
-  onPlaySegment,
+  onSpeakSegment,
   onUpdate,
   segments
 }: {
   exercises: DictationExercise[];
-  onPlaySegment: (segment: TranscriptSegment) => void;
+  onSpeakSegment: (segment: TranscriptSegment) => void;
   onUpdate: (exercises: DictationExercise[]) => void;
   segments: TranscriptSegment[];
 }) {
@@ -692,9 +567,9 @@ function DictationPanel({
               <div className="daily-lesson-dictation-top">
                 <strong>句子 {index + 1}</strong>
                 {segment ? (
-                  <button type="button" onClick={() => onPlaySegment(segment)}>
+                  <button type="button" onClick={() => onSpeakSegment(segment)}>
                     <Play size={15} />
-                    播放原句
+                    朗读原句
                   </button>
                 ) : null}
               </div>
@@ -739,12 +614,12 @@ function DictationPanel({
 }
 
 function ShadowingPanel({
-  onPlaySegment,
+  onSpeakSegment,
   onUpdate,
   segments,
   shadowing
 }: {
-  onPlaySegment: (segment: TranscriptSegment) => void;
+  onSpeakSegment: (segment: TranscriptSegment) => void;
   onUpdate: (shadowing: DailyTraining["shadowing"]) => void;
   segments: TranscriptSegment[];
   shadowing: DailyTraining["shadowing"];
@@ -770,7 +645,7 @@ function ShadowingPanel({
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setRecordingError(null);
     } catch {
-      setRecordingError("没有获得麦克风权限。可以先播放原句，自行跟读对比。");
+      setRecordingError("没有获得麦克风权限。可以先朗读原句，自行跟读对比。");
       return;
     }
 
@@ -807,9 +682,9 @@ function ShadowingPanel({
           <article key={segment.id}>
             <p>{segment.text}</p>
             <div className="daily-lesson-learning-actions">
-              <button type="button" onClick={() => onPlaySegment(segment)}>
+              <button type="button" onClick={() => onSpeakSegment(segment)}>
                 <Play size={15} />
-                播放原句
+                朗读原句
               </button>
               <button type="button" onClick={() => void toggleRecording(segment.id)}>
                 <Mic size={15} />
@@ -1267,10 +1142,6 @@ function mergeReviewItems(review: ReviewItem[], items: LearningItem[]): ReviewIt
   return [...review, ...nextItems.filter((item) => !existing.has(item.expressionId))];
 }
 
-function findSegmentByTime(segments: TranscriptSegment[], time: number): TranscriptSegment | undefined {
-  return segments.find((segment) => time >= segment.startTime && time <= segment.endTime) ?? segments[0];
-}
-
 function compareWords(userAnswer: string, correctText: string) {
   const userWords = normalizeWords(userAnswer);
   const correctWords = normalizeWords(correctText);
@@ -1288,28 +1159,38 @@ function normalizeWords(value: string): string[] {
     .filter(Boolean);
 }
 
-function appendStartTime(url?: string, startTime?: number, autoplay = false): string | undefined {
-  if (!url) {
-    return url;
+function speakTrainingText(text: string) {
+  if (typeof window === "undefined") {
+    return;
   }
 
-  try {
-    const nextUrl = new URL(url);
+  const value = text.trim();
 
-    if (nextUrl.hostname.includes("bilibili") && typeof startTime === "number") {
-      nextUrl.searchParams.set("t", String(Math.floor(startTime)));
-      nextUrl.searchParams.set("autoplay", autoplay ? "1" : "0");
-    } else if (nextUrl.hostname.includes("youtube") && typeof startTime === "number") {
-      nextUrl.searchParams.set("start", String(Math.floor(startTime)));
-      nextUrl.searchParams.set("autoplay", autoplay ? "1" : "0");
-    } else if (autoplay && nextUrl.hostname.includes("youtube")) {
-      nextUrl.searchParams.set("autoplay", "1");
-    }
-
-    return nextUrl.toString();
-  } catch {
-    return url;
+  if (!value) {
+    return;
   }
+
+  if (!window.speechSynthesis) {
+    globalThis.alert("当前浏览器不支持朗读。");
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(value);
+  utterance.lang = "en-US";
+  utterance.rate = 0.88;
+  utterance.pitch = 1;
+
+  const englishVoice = window.speechSynthesis
+    .getVoices()
+    .find((voice) => /^en(-|_)/i.test(voice.lang));
+
+  if (englishVoice) {
+    utterance.voice = englishVoice;
+  }
+
+  window.speechSynthesis.speak(utterance);
 }
 
 function getLearningTypeLabel(type: LearningItem["type"]): string {
