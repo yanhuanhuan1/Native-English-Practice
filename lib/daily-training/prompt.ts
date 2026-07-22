@@ -26,7 +26,7 @@ export function buildDailyTrainingMessages({
         "The product is not a textbook page. It is an interactive listening tool.",
         "",
         "Core workflow:",
-        "Watch -> synchronized transcript -> mark unclear sentences -> dictation -> learn useful items -> shadowing -> one output task -> complete lesson.",
+        "Watch -> learn useful items -> upgrade simple words into advanced expression blocks -> dictation -> one output task -> complete lesson.",
         "",
         "Resource rules:",
         "- Do not randomly choose the lesson theme. Use the selected local reserve item below.",
@@ -46,6 +46,7 @@ export function buildDailyTrainingMessages({
         "Learning item rules:",
         "- Extract useful items from the transcript, not random words.",
         "- Prefer reusable expressions, workplace collocations, connected speech, weak forms, and useful vocabulary slightly above the learner's level.",
+        "- Each learning item should help the UI show: simple word -> reusable expression block -> one complete spoken sentence.",
         "- Avoid names, places, rare proper nouns, isolated basic words, and low-reuse trivia.",
         "",
         "Return strict JSON only. Keep UI-facing explanations in Simplified Chinese."
@@ -165,6 +166,7 @@ export function buildDailyTrainingMessages({
         "- transcriptSegments should include the full usable transcript for the selected clip, ideally 8-25 segments for a short lesson.",
         "- dictation must contain 3-5 segmentIds selected from transcriptSegments.",
         "- learningItems must contain 6-10 useful items from transcriptSegments.",
+        "- learningItems should include collocations and reusableExample values that upgrade simple wording into more natural spoken English.",
         "- comprehension must contain 2-3 interactive questions based on the video content.",
         "- outputTask must be one 30-60 second speaking task using 3 lesson expressions.",
         "- Do not include old modules like large reading cards, growth stats, weak-point panels, or static first/second listen cards."

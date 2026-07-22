@@ -3120,6 +3120,7 @@ textarea:focus {
 }
 
 .daily-lesson-learning-list,
+.daily-lesson-expression-upgrades,
 .daily-lesson-dictation-list,
 .daily-lesson-shadowing-list,
 .daily-lesson-question-list {
@@ -3128,6 +3129,7 @@ textarea:focus {
 }
 
 .daily-lesson-learning-item,
+.daily-lesson-expression-upgrade,
 .daily-lesson-dictation,
 .daily-lesson-shadowing-list article,
 .daily-lesson-question-list article,
@@ -3160,6 +3162,42 @@ textarea:focus {
 
 .daily-lesson-learning-item q {
   color: var(--text);
+  line-height: 1.65;
+}
+
+.daily-lesson-expression-upgrade {
+  gap: 14px;
+}
+
+.daily-lesson-upgrade-chain {
+  display: grid;
+  grid-template-columns: 0.8fr 1.1fr 1.5fr;
+  gap: 10px;
+}
+
+.daily-lesson-upgrade-chain > div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.daily-lesson-upgrade-chain span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.daily-lesson-upgrade-chain strong {
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.daily-lesson-expression-upgrade p {
+  margin: 0;
+  color: var(--text-muted);
   line-height: 1.65;
 }
 
@@ -3304,6 +3342,7 @@ textarea:focus {
   }
 
   .daily-lesson-transcript-tools,
+  .daily-lesson-upgrade-chain,
   .daily-lesson-options {
     grid-template-columns: 1fr;
   }

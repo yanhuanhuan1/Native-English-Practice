@@ -330,20 +330,18 @@ function LessonWorkspace({
         }
       />
 
+      <AdvancedExpressionPanel
+        key={`advanced-${trainingInstanceKey}`}
+        items={training.learningItems}
+        onSpeakText={speakTrainingText}
+      />
+
       <DictationPanel
         key={`dictation-${trainingInstanceKey}`}
         exercises={training.dictation}
         segments={training.transcriptSegments}
         onSpeakSegment={(segment) => speakTrainingText(segment.text)}
         onUpdate={(dictation) => onUpdate((draft) => ({ ...draft, dictation }))}
-      />
-
-      <ShadowingPanel
-        key={`shadowing-${trainingInstanceKey}`}
-        shadowing={training.shadowing}
-        segments={training.transcriptSegments}
-        onSpeakSegment={(segment) => speakTrainingText(segment.text)}
-        onUpdate={(shadowing) => onUpdate((draft) => ({ ...draft, shadowing }))}
       />
 
       <ComprehensionPanel
@@ -549,6 +547,60 @@ function LearningItemsPanel({
   );
 }
 
+function AdvancedExpressionPanel({
+  items,
+  onSpeakText
+}: {
+  items: LearningItem[];
+  onSpeakText: (text: string) => void;
+}) {
+  const upgrades = items.slice(0, 6).map(buildExpressionUpgrade);
+
+  if (upgrades.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="daily-lesson-section">
+      <div className="daily-lesson-section-head">
+        <h2>高级表达拓展</h2>
+        <span>单词 → 表达块 → 句子</span>
+      </div>
+      <div className="daily-lesson-expression-upgrades">
+        {upgrades.map((upgrade) => (
+          <article className="daily-lesson-expression-upgrade" key={upgrade.id}>
+            <div className="daily-lesson-upgrade-chain">
+              <div>
+                <span>基础说法</span>
+                <strong>{upgrade.simpleWord}</strong>
+              </div>
+              <div>
+                <span>更像母语者的块</span>
+                <strong>{upgrade.expressionBlock}</strong>
+              </div>
+              <div>
+                <span>可以直接说的一句话</span>
+                <strong>{upgrade.fullSentence}</strong>
+              </div>
+            </div>
+            <p>{upgrade.whyZh}</p>
+            <div className="daily-lesson-learning-actions">
+              <button type="button" onClick={() => onSpeakText(upgrade.expressionBlock)}>
+                <Play size={15} />
+                朗读表达块
+              </button>
+              <button type="button" onClick={() => onSpeakText(upgrade.fullSentence)}>
+                <Play size={15} />
+                朗读完整句
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function DictationPanel({
   exercises,
   onSpeakSegment,
@@ -625,94 +677,6 @@ function DictationPanel({
             </article>
           );
         })}
-      </div>
-    </section>
-  );
-}
-
-function ShadowingPanel({
-  onSpeakSegment,
-  onUpdate,
-  segments,
-  shadowing
-}: {
-  onSpeakSegment: (segment: TranscriptSegment) => void;
-  onUpdate: (shadowing: DailyTraining["shadowing"]) => void;
-  segments: TranscriptSegment[];
-  shadowing: DailyTraining["shadowing"];
-}) {
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const [recordingSegmentId, setRecordingSegmentId] = useState<string | null>(null);
-  const [recordingError, setRecordingError] = useState<string | null>(null);
-  const selectedSegments = shadowing.segmentIds
-    .map((segmentId) => segments.find((segment) => segment.id === segmentId))
-    .filter((segment): segment is TranscriptSegment => !!segment);
-
-  async function toggleRecording(segmentId: string) {
-    if (recordingSegmentId === segmentId) {
-      recorderRef.current?.stop();
-      setRecordingSegmentId(null);
-      return;
-    }
-
-    let stream: MediaStream;
-
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setRecordingError(null);
-    } catch {
-      setRecordingError("没有获得麦克风权限。可以先朗读原句，自行跟读对比。");
-      return;
-    }
-
-    const recorder = new MediaRecorder(stream);
-    chunksRef.current = [];
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunksRef.current.push(event.data);
-      }
-    };
-    recorder.onstop = () => {
-      const url = URL.createObjectURL(new Blob(chunksRef.current, { type: "audio/webm" }));
-      stream.getTracks().forEach((track) => track.stop());
-      onUpdate({
-        ...shadowing,
-        recordings: { ...shadowing.recordings, [segmentId]: url },
-        completed: true
-      });
-    };
-    recorder.start();
-    recorderRef.current = recorder;
-    setRecordingSegmentId(segmentId);
-  }
-
-  return (
-    <section className="daily-lesson-section">
-      <div className="daily-lesson-section-head">
-        <h2>逐句跟读</h2>
-        <span>听一句，录一句</span>
-      </div>
-      {recordingError ? <p className="daily-lesson-error">{recordingError}</p> : null}
-      <div className="daily-lesson-shadowing-list">
-        {selectedSegments.map((segment) => (
-          <article key={segment.id}>
-            <p>{segment.text}</p>
-            <div className="daily-lesson-learning-actions">
-              <button type="button" onClick={() => onSpeakSegment(segment)}>
-                <Play size={15} />
-                朗读原句
-              </button>
-              <button type="button" onClick={() => void toggleRecording(segment.id)}>
-                <Mic size={15} />
-                {recordingSegmentId === segment.id ? "停止录音" : "开始录音"}
-              </button>
-              {shadowing.recordings[segment.id] ? (
-                <audio controls src={shadowing.recordings[segment.id]} />
-              ) : null}
-            </div>
-          </article>
-        ))}
       </div>
     </section>
   );
@@ -1189,7 +1153,6 @@ function getLessonProgress(training: DailyTraining): number {
     training.transcriptSegments.some((segment) => segment.markedUnclear || segment.completed),
     training.learningItems.some((item) => item.saved || item.mastery !== "unknown"),
     training.dictation.some((exercise) => exercise.completed),
-    training.shadowing.completed || Object.keys(training.shadowing.recordings).length > 0,
     training.outputTask.completed || !!training.outputTask.feedback,
     training.completed
   ];
@@ -1238,6 +1201,53 @@ function normalizeWords(value: string): string[] {
     .replace(/[^a-z'\s]/g, " ")
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function buildExpressionUpgrade(item: LearningItem) {
+  const expressionBlock = item.collocations[0] || item.text;
+  const fullSentence = item.reusableExample || item.sourceSentence || `I can use ${expressionBlock}.`;
+  const simpleWord = pickSimpleExpressionSeed(item.text, item.sourceSentence, expressionBlock);
+
+  return {
+    id: item.id,
+    simpleWord,
+    expressionBlock,
+    fullSentence,
+    whyZh: `不要只停在 "${simpleWord}" 这种单点词汇，练成 "${expressionBlock}" 这样的表达块，开口时更容易直接组成自然的一句话。`
+  };
+}
+
+function pickSimpleExpressionSeed(...values: string[]): string {
+  const stopWords = new Set([
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "your",
+    "you",
+    "are",
+    "can",
+    "use",
+    "have",
+    "from",
+    "into",
+    "about"
+  ]);
+
+  for (const value of values) {
+    const word = value
+      .split(/\s+/)
+      .map((item) => item.replace(/[^a-zA-Z']/g, "").toLowerCase())
+      .find((item) => item.length >= 4 && !stopWords.has(item));
+
+    if (word) {
+      return word;
+    }
+  }
+
+  return values[0]?.split(/\s+/)[0] || "word";
 }
 
 function speakTrainingText(text: string) {
