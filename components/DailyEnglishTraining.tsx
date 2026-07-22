@@ -371,7 +371,7 @@ function LessonWorkspace({
   }
 
   return (
-    <section className="daily-lesson-shell">
+    <section className={`daily-lesson-shell daily-lesson-shell-${activeStep?.id ?? "listening"}`}>
       <LessonHeader
         isGenerating={isGenerating}
         menuOpen={menuOpen}
