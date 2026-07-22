@@ -641,7 +641,7 @@ function ListeningStep({
 function ListeningVocabularyStrip({ items }: { items: LearningItem[] }) {
   const displayItems = items
     .filter((item) => item.type !== "pronunciation")
-    .slice(0, 10);
+    .slice(0, 5);
 
   if (!displayItems.length) {
     return null;
