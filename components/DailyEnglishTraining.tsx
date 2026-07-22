@@ -392,10 +392,6 @@ function LessonWorkspace({
           <ListeningStep
             key={`listening-${trainingInstanceKey}`}
             training={training}
-            onSpeakSegment={(segment) => speakTrainingText(segment.text)}
-            onUpdateSegments={(transcriptSegments) =>
-              onUpdate((draft) => ({ ...draft, transcriptSegments }))
-            }
           />
         ) : null}
         {activeStep?.id === "expressions" ? (
@@ -617,17 +613,13 @@ function StickyStepFooter({
 }
 
 function ListeningStep({
-  onSpeakSegment,
-  onUpdateSegments,
   training
 }: {
-  onSpeakSegment: (segment: TranscriptSegment) => void;
-  onUpdateSegments: (segments: TranscriptSegment[]) => void;
   training: DailyTraining;
 }) {
   return (
     <section className="daily-lesson-step-panel daily-lesson-listening-step">
-      <div className="daily-lesson-video-block">
+      <div className="daily-lesson-video-block daily-lesson-video-block-large">
         <div className="daily-lesson-player">
           <EmbeddedPlayer resource={training.listening.resource} />
         </div>
@@ -640,115 +632,32 @@ function ListeningStep({
             <ExternalLink size={16} aria-hidden="true" />
           </a>
         </div>
+        <ListeningVocabularyStrip items={training.learningItems} />
       </div>
-      <SynchronizedTranscript
-        learningItems={training.learningItems}
-        segments={training.transcriptSegments}
-        transcriptSource={training.transcriptSource}
-        onSpeakSegment={onSpeakSegment}
-        onUpdateSegments={onUpdateSegments}
-      />
     </section>
   );
 }
 
-function SynchronizedTranscript({
-  learningItems,
-  onSpeakSegment,
-  onUpdateSegments,
-  segments,
-  transcriptSource
-}: {
-  learningItems: LearningItem[];
-  onSpeakSegment: (segment: TranscriptSegment) => void;
-  onUpdateSegments: (segments: TranscriptSegment[]) => void;
-  segments: TranscriptSegment[];
-  transcriptSource: DailyTraining["transcriptSource"];
-}) {
-  const [query, setQuery] = useState("");
-  const [showZh, setShowZh] = useState(false);
-  const [onlyMarked, setOnlyMarked] = useState(false);
-  const [speaker, setSpeaker] = useState("all");
-  const speakers = Array.from(new Set(segments.map((segment) => segment.speaker).filter(Boolean)));
-  const filteredSegments = segments.filter((segment) => {
-    const matchesQuery =
-      !query.trim() || segment.text.toLowerCase().includes(query.trim().toLowerCase());
-    const matchesMarked = !onlyMarked || segment.markedUnclear;
-    const matchesSpeaker = speaker === "all" || segment.speaker === speaker;
+function ListeningVocabularyStrip({ items }: { items: LearningItem[] }) {
+  const displayItems = items
+    .filter((item) => item.type !== "pronunciation")
+    .slice(0, 10);
 
-    return matchesQuery && matchesMarked && matchesSpeaker;
-  });
-
-  function updateSegment(segmentId: string, updates: Partial<TranscriptSegment>) {
-    onUpdateSegments(
-      segments.map((segment) => (segment.id === segmentId ? { ...segment, ...updates } : segment))
-    );
-  }
-
-  if (segments.length === 0) {
-    return (
-      <section className="daily-lesson-transcript-panel">
-        <div className="daily-lesson-section-head">
-          <h2>同步文本</h2>
-          <span>{transcriptSource}</span>
-        </div>
-        <p className="daily-lesson-empty-note">
-          当前资源没有可用逐句转录。可以先完成视频输入，或通过更多菜单重新抽取课程。
-        </p>
-      </section>
-    );
+  if (!displayItems.length) {
+    return null;
   }
 
   return (
-    <section className="daily-lesson-transcript-panel">
+    <section className="daily-lesson-video-vocab">
       <div className="daily-lesson-section-head">
-        <h2>同步文本</h2>
-        <span>{filteredSegments.length} / {segments.length}</span>
+        <h2>本视频相关词汇和短语</h2>
+        <span>简单释义</span>
       </div>
-      <div className="daily-lesson-transcript-tools">
-        <label>
-          <span>搜索</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} />
-        </label>
-        <select value={speaker} onChange={(event) => setSpeaker(event.target.value)}>
-          <option value="all">全部说话人</option>
-          {speakers.map((item) => (
-            <option value={item} key={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={() => setShowZh((value) => !value)}>
-          {showZh ? "只看英文" : "显示解释"}
-        </button>
-        <button type="button" onClick={() => setOnlyMarked((value) => !value)}>
-          {onlyMarked ? "显示全部" : "只看没听清"}
-        </button>
-      </div>
-      <div className="daily-lesson-transcript-list">
-        {filteredSegments.map((segment) => (
-          <article className="daily-lesson-segment" key={segment.id} data-active={segment.completed}>
-            <div className="daily-lesson-segment-top">
-              <span>{formatTime(segment.startTime)}</span>
-              <strong>{segment.speaker}</strong>
-              <button type="button" onClick={() => onSpeakSegment(segment)}>
-                朗读本句
-              </button>
-              <button
-                type="button"
-                onClick={() => updateSegment(segment.id, { markedUnclear: !segment.markedUnclear })}
-              >
-                {segment.markedUnclear ? "已标记" : "没听清"}
-              </button>
-              <button
-                type="button"
-                onClick={() => updateSegment(segment.id, { completed: !segment.completed })}
-              >
-                {segment.completed ? "已看过" : "标记看过"}
-              </button>
-            </div>
-            <p>{highlightLearningItems(segment.text, learningItems)}</p>
-            {showZh && segment.translation ? <small>{segment.translation}</small> : null}
+      <div className="daily-lesson-video-vocab-grid">
+        {displayItems.map((item) => (
+          <article key={item.id}>
+            <strong>{item.text}</strong>
+            <span>{item.meaning}</span>
           </article>
         ))}
       </div>
@@ -1878,31 +1787,6 @@ function formatTime(seconds: number): string {
   const rest = String(safeSeconds % 60).padStart(2, "0");
 
   return `${minutes}:${rest}`;
-}
-
-function highlightLearningItems(text: string, learningItems: LearningItem[]) {
-  const matches = learningItems
-    .map((item) => item.text)
-    .filter((item) => item.length >= 4 && text.toLowerCase().includes(item.toLowerCase()))
-    .slice(0, 4);
-
-  if (!matches.length) {
-    return text;
-  }
-
-  const pattern = new RegExp(`(${matches.map(escapeRegExp).join("|")})`, "gi");
-
-  return text.split(pattern).map((part, index) =>
-    matches.some((item) => item.toLowerCase() === part.toLowerCase()) ? (
-      <mark key={`${part}-${index}`}>{part}</mark>
-    ) : (
-      part
-    )
-  );
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function pickSimpleExpressionSeed(...values: string[]): string {

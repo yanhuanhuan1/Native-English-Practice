@@ -2955,13 +2955,12 @@ textarea:focus {
 }
 
 .daily-lesson-listening-step {
-  grid-template-columns: minmax(0, 1.38fr) minmax(360px, 1fr);
+  grid-template-columns: 1fr;
   align-items: stretch;
 }
 
-.daily-lesson-listening-step .daily-lesson-video-block,
-.daily-lesson-transcript-panel {
-  min-height: 620px;
+.daily-lesson-listening-step .daily-lesson-video-block {
+  min-height: 0;
 }
 
 .daily-lesson-transcript-panel {
@@ -3120,6 +3119,7 @@ textarea:focus {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #030609;
+  aspect-ratio: 16 / 9;
 }
 
 .daily-lesson-player iframe,
@@ -3127,8 +3127,12 @@ textarea:focus {
 .daily-lesson-player audio {
   width: 100%;
   height: 100%;
-  min-height: 520px;
+  min-height: 100%;
   border: 0;
+}
+
+.daily-lesson-video-block-large .daily-lesson-player {
+  min-height: min(76vh, 760px);
 }
 
 .daily-lesson-player audio {
@@ -3149,6 +3153,39 @@ textarea:focus {
 .daily-lesson-resource-line a {
   display: inline-flex;
   color: var(--accent-strong);
+}
+
+.daily-lesson-video-vocab {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.daily-lesson-video-vocab-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.daily-lesson-video-vocab-grid article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(21, 27, 35, 0.72);
+  padding: 10px;
+}
+
+.daily-lesson-video-vocab-grid strong {
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.daily-lesson-video-vocab-grid span {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .daily-lesson-section {
@@ -3490,13 +3527,8 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .daily-lesson-listening-step .daily-lesson-video-block,
-  .daily-lesson-transcript-panel {
+  .daily-lesson-listening-step .daily-lesson-video-block {
     min-height: auto;
-  }
-
-  .daily-lesson-transcript-panel {
-    max-height: 50vh;
   }
 
   .daily-lesson-sticky-footer {
@@ -3532,9 +3564,14 @@ textarea:focus {
     min-height: 300px;
   }
 
+  .daily-lesson-video-block-large .daily-lesson-player {
+    min-height: 340px;
+  }
+
   .daily-lesson-transcript-tools,
   .daily-lesson-upgrade-chain,
   .daily-lesson-sticky-footer,
+  .daily-lesson-video-vocab-grid,
   .daily-lesson-options {
     grid-template-columns: 1fr;
   }
