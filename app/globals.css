@@ -2798,6 +2798,10 @@ textarea:focus {
 .daily-lesson-menu a,
 .daily-lesson-menu a:visited,
 .daily-lesson-segment-actions button,
+.daily-lesson-step-pill,
+.daily-lesson-sticky-footer button,
+.daily-lesson-filter-row button,
+.daily-lesson-card-pager button,
 .daily-lesson-learning-actions button,
 .daily-lesson-dictation button,
 .daily-lesson-options button,
@@ -2827,7 +2831,8 @@ textarea:focus {
 
 .daily-lesson-shell {
   display: grid;
-  gap: 26px;
+  gap: 18px;
+  padding-bottom: 92px;
 }
 
 .daily-lesson-header {
@@ -2881,6 +2886,158 @@ textarea:focus {
   margin: 4px 0 8px;
   font-size: 32px;
   line-height: 1.16;
+}
+
+.daily-lesson-stepper {
+  overflow-x: auto;
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 0 14px;
+}
+
+.daily-lesson-step-pill {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  min-width: 132px;
+  background: rgba(21, 27, 35, 0.72);
+  color: var(--text-muted);
+}
+
+.daily-lesson-step-pill span {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.daily-lesson-step-pill[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.daily-lesson-step-pill[data-status="completed"] span {
+  background: var(--accent);
+  color: #06130f;
+}
+
+.daily-lesson-step-pill[data-status="needs_review"] {
+  border-color: rgba(245, 176, 85, 0.65);
+}
+
+.daily-lesson-step-notice {
+  margin: 0;
+  border: 1px solid rgba(245, 176, 85, 0.45);
+  border-radius: var(--radius);
+  background: rgba(245, 176, 85, 0.12);
+  color: #ffd796;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.daily-lesson-step-content {
+  min-height: min(720px, calc(100vh - 250px));
+}
+
+.daily-lesson-step-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.daily-lesson-narrow-step {
+  width: min(900px, 100%);
+  margin: 0 auto;
+}
+
+.daily-lesson-listening-step {
+  grid-template-columns: minmax(0, 1.38fr) minmax(360px, 1fr);
+  align-items: stretch;
+}
+
+.daily-lesson-listening-step .daily-lesson-video-block,
+.daily-lesson-transcript-panel {
+  min-height: 620px;
+}
+
+.daily-lesson-transcript-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(21, 27, 35, 0.72);
+  padding: 14px;
+}
+
+.daily-lesson-sticky-footer {
+  position: sticky;
+  z-index: 18;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(14, 19, 26, 0.94);
+  padding: 12px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+}
+
+.daily-lesson-sticky-footer > div {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+}
+
+.daily-lesson-sticky-footer span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daily-lesson-filter-row,
+.daily-lesson-card-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.daily-lesson-filter-row button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.daily-lesson-single-card {
+  min-height: 380px;
+}
+
+.daily-lesson-shadowing-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(21, 27, 35, 0.72);
+  padding: 18px;
+}
+
+.daily-lesson-shadowing-card > span {
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.daily-lesson-shadowing-card p {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.55;
 }
 
 .daily-lesson-meta,
@@ -3325,6 +3482,40 @@ textarea:focus {
     flex-direction: column;
   }
 
+  .daily-lesson-step-content {
+    min-height: auto;
+  }
+
+  .daily-lesson-listening-step {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-lesson-listening-step .daily-lesson-video-block,
+  .daily-lesson-transcript-panel {
+    min-height: auto;
+  }
+
+  .daily-lesson-transcript-panel {
+    max-height: 50vh;
+  }
+
+  .daily-lesson-sticky-footer {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .daily-lesson-sticky-footer > div {
+    order: -1;
+  }
+
+  .daily-lesson-step-pill {
+    min-width: 104px;
+  }
+
   .daily-lesson-header-actions,
   .daily-lesson-level-grid {
     grid-template-columns: 1fr;
@@ -3343,6 +3534,7 @@ textarea:focus {
 
   .daily-lesson-transcript-tools,
   .daily-lesson-upgrade-chain,
+  .daily-lesson-sticky-footer,
   .daily-lesson-options {
     grid-template-columns: 1fr;
   }
