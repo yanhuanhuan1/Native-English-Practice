@@ -58,7 +58,7 @@ const masteryLabels: Record<LearningItemMastery, string> = {
   active: "可以主动使用"
 };
 
-type LessonStepId = "listening" | "expressions" | "practice" | "shadowing" | "speaking" | "review";
+type LessonStepId = "listening" | "expressions" | "practice" | "speaking" | "review";
 type LessonStepStatus = "not_started" | "in_progress" | "completed" | "needs_review";
 
 interface LessonStep {
@@ -275,7 +275,6 @@ function LessonWorkspace({
   const [currentStep, setCurrentStep] = useState<LessonStepId>(() =>
     getInitialLessonStep(training, steps)
   );
-  const [stepNotice, setStepNotice] = useState<string | null>(null);
   const currentStepIndex = Math.max(0, steps.findIndex((step) => step.id === currentStep));
   const activeStep = steps[currentStepIndex] ?? steps[0];
   const progress = steps.length
@@ -306,11 +305,6 @@ function LessonWorkspace({
 
     if (!nextStep) {
       return;
-    }
-
-    if (activeStep?.status !== "completed" && activeStep?.id !== stepId) {
-      setStepNotice(`当前步骤「${activeStep?.label}」尚未完成，你仍然可以继续切换。`);
-      window.setTimeout(() => setStepNotice(null), 2600);
     }
 
     setCurrentStep(stepId);
@@ -353,10 +347,7 @@ function LessonWorkspace({
         speaking: true,
         review: true
       },
-      shadowing: {
-        ...draft.shadowing,
-        completed: true
-      }
+      shadowing: { ...draft.shadowing, completed: true }
     }));
 
     window.setTimeout(() => {
@@ -385,7 +376,6 @@ function LessonWorkspace({
       />
       {error ? <p className="daily-lesson-error">{error}</p> : null}
       <LessonStepper currentStep={activeStep?.id ?? "listening"} steps={steps} onStepChange={goToStep} />
-      {stepNotice ? <p className="daily-lesson-step-notice">{stepNotice}</p> : null}
 
       <section className="daily-lesson-step-content">
         {activeStep?.id === "listening" ? (
@@ -420,15 +410,6 @@ function LessonWorkspace({
               onUpdate((draft) => ({ ...draft, comprehension }))
             }
             onUpdateDictation={(dictation) => onUpdate((draft) => ({ ...draft, dictation }))}
-          />
-        ) : null}
-        {activeStep?.id === "shadowing" ? (
-          <ShadowingStep
-            key={`shadowing-${trainingInstanceKey}`}
-            segments={training.transcriptSegments}
-            shadowing={training.shadowing}
-            onSpeakSegment={(segment) => speakTrainingText(segment.text)}
-            onUpdate={(shadowing) => onUpdate((draft) => ({ ...draft, shadowing }))}
           />
         ) : null}
         {activeStep?.id === "speaking" ? (
@@ -997,124 +978,6 @@ function SingleComprehensionQuestion({
   );
 }
 
-function ShadowingStep({
-  onSpeakSegment,
-  onUpdate,
-  segments,
-  shadowing
-}: {
-  onSpeakSegment: (segment: TranscriptSegment) => void;
-  onUpdate: (shadowing: DailyTraining["shadowing"]) => void;
-  segments: TranscriptSegment[];
-  shadowing: DailyTraining["shadowing"];
-}) {
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [hideText, setHideText] = useState(false);
-  const [recordingSegmentId, setRecordingSegmentId] = useState<string | null>(null);
-  const [recordingError, setRecordingError] = useState<string | null>(null);
-  const selectedSegments = (shadowing.segmentIds.length
-    ? shadowing.segmentIds
-    : segments.slice(0, 5).map((segment) => segment.id)
-  )
-    .map((segmentId) => segments.find((segment) => segment.id === segmentId))
-    .filter((segment): segment is TranscriptSegment => !!segment);
-  const activeSegment = selectedSegments[Math.min(activeIndex, Math.max(0, selectedSegments.length - 1))];
-
-  async function toggleRecording(segmentId: string) {
-    if (recordingSegmentId === segmentId) {
-      recorderRef.current?.stop();
-      setRecordingSegmentId(null);
-      return;
-    }
-
-    let stream: MediaStream;
-
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setRecordingError(null);
-    } catch {
-      setRecordingError("没有获得麦克风权限。可以朗读原句后自行跟读，或手动标记完成。");
-      return;
-    }
-
-    const recorder = new MediaRecorder(stream);
-    chunksRef.current = [];
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunksRef.current.push(event.data);
-      }
-    };
-    recorder.onstop = () => {
-      const url = URL.createObjectURL(new Blob(chunksRef.current, { type: "audio/webm" }));
-      stream.getTracks().forEach((track) => track.stop());
-      onUpdate({
-        ...shadowing,
-        recordings: { ...shadowing.recordings, [segmentId]: url },
-        completed: true
-      });
-    };
-    recorder.start();
-    recorderRef.current = recorder;
-    setRecordingSegmentId(segmentId);
-  }
-
-  if (!activeSegment) {
-    return (
-      <section className="daily-lesson-step-panel daily-lesson-narrow-step">
-        <p className="daily-lesson-empty-note">本课没有可跟读句子。可以手动完成本步骤并继续。</p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="daily-lesson-step-panel daily-lesson-narrow-step">
-      <div className="daily-lesson-section-head">
-        <h2>Shadowing</h2>
-        <span>Sentence {activeIndex + 1} / {selectedSegments.length}</span>
-      </div>
-      {recordingError ? <p className="daily-lesson-error">{recordingError}</p> : null}
-      <article className="daily-lesson-shadowing-card">
-        <span>{formatTime(activeSegment.startTime)}</span>
-        <p>{hideText ? "文本已隐藏，先跟声音模仿。" : activeSegment.text}</p>
-        {activeSegment.translation ? <small>{activeSegment.translation}</small> : null}
-        <div className="daily-lesson-diff">
-          <p>发音提示：注意句子重音、弱读和自然停顿。先模仿节奏，再追求完整。</p>
-        </div>
-        <div className="daily-lesson-learning-actions">
-          <button type="button" onClick={() => onSpeakSegment(activeSegment)}>
-            <Play size={15} />
-            朗读原句
-          </button>
-          <button type="button" onClick={() => setHideText((value) => !value)}>
-            {hideText ? "显示文本" : "隐藏文本"}
-          </button>
-          <button type="button" onClick={() => void toggleRecording(activeSegment.id)}>
-            <Mic size={15} />
-            {recordingSegmentId === activeSegment.id ? "停止录音" : "开始录音"}
-          </button>
-          {shadowing.recordings[activeSegment.id] ? (
-            <audio controls src={shadowing.recordings[activeSegment.id]} />
-          ) : null}
-        </div>
-        <div className="daily-lesson-card-pager">
-          <button disabled={activeIndex === 0} type="button" onClick={() => setActiveIndex((value) => value - 1)}>
-            上一句
-          </button>
-          <button
-            disabled={activeIndex >= selectedSegments.length - 1}
-            type="button"
-            onClick={() => setActiveIndex((value) => value + 1)}
-          >
-            下一句
-          </button>
-        </div>
-      </article>
-    </section>
-  );
-}
-
 function OutputPanel({
   learningItems,
   onUpdate,
@@ -1256,7 +1119,7 @@ function CompleteLessonPanel({
       </div>
       <ul>
         <li>3 个重点表达：{review.expressions.join(" / ") || "完成学习项后生成"}</li>
-        <li>2 个声音现象：{review.soundIssues.join(" / ") || "跟读时注意弱读和连读"}</li>
+        <li>2 个声音现象：{review.soundIssues.join(" / ") || "注意弱读、连读和自然停顿"}</li>
         <li>1 个复习句子：{review.reviewSentence}</li>
       </ul>
       <div className="daily-lesson-learning-actions">
@@ -1292,7 +1155,7 @@ function EmptyLesson({
     <section className="daily-lesson-empty">
       <span>Daily English Training</span>
       <h1>选择等级，开始今天的精听</h1>
-      <p>每个等级内置 50 条 YouTube/官方媒体优先视频储备。开始后会抽取一条，并生成精听、表达提取、跟读和输出任务。</p>
+      <p>每个等级内置 50 条 YouTube/官方媒体优先视频储备。开始后会抽取一条，并生成精听、表达提取和输出任务。</p>
       <div className="daily-lesson-level-grid">
         {trainingLibraryLevels.map((level) => (
           <button
@@ -1556,16 +1419,6 @@ function buildLessonSteps(training: DailyTraining): LessonStep[] {
     });
   }
 
-  if (training.transcriptSegments.length || training.shadowing.segmentIds.length) {
-    steps.push({
-      id: "shadowing",
-      label: "Shadowing",
-      shortLabel: "跟读",
-      description: "逐句模仿和录音",
-      status: getShadowingStatus(training)
-    });
-  }
-
   steps.push(
     {
       id: "speaking",
@@ -1613,7 +1466,6 @@ function isLessonStepId(value: unknown): value is LessonStepId {
     value === "listening" ||
     value === "expressions" ||
     value === "practice" ||
-    value === "shadowing" ||
     value === "speaking" ||
     value === "review"
   );
@@ -1658,16 +1510,6 @@ function getPracticeStatus(training: DailyTraining): LessonStepStatus {
   return completed > 0 ? "in_progress" : "not_started";
 }
 
-function getShadowingStatus(training: DailyTraining): LessonStepStatus {
-  const recordingCount = Object.keys(training.shadowing.recordings).length;
-
-  if (training.shadowing.completed || recordingCount >= Math.min(3, Math.max(1, training.shadowing.segmentIds.length))) {
-    return "completed";
-  }
-
-  return recordingCount > 0 ? "in_progress" : "not_started";
-}
-
 function getSpeakingStatus(training: DailyTraining): LessonStepStatus {
   if (training.stepStatus.speaking || training.outputTask.completed) {
     return "completed";
@@ -1686,8 +1528,6 @@ function markTrainingStepComplete(training: DailyTraining, stepId: LessonStepId)
       return { ...training, stepStatus: { ...training.stepStatus, expression: true } };
     case "practice":
       return { ...training, stepStatus: { ...training.stepStatus, practice: true } };
-    case "shadowing":
-      return { ...training, shadowing: { ...training.shadowing, completed: true } };
     case "speaking":
       return {
         ...training,
@@ -1779,14 +1619,6 @@ function buildExpressionUpgrade(item: LearningItem) {
     fullSentence,
     whyZh: `不要只停在 "${simpleWord}" 这种单点词汇，练成 "${expressionBlock}" 这样的表达块，开口时更容易直接组成自然的一句话。`
   };
-}
-
-function formatTime(seconds: number): string {
-  const safeSeconds = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const rest = String(safeSeconds % 60).padStart(2, "0");
-
-  return `${minutes}:${rest}`;
 }
 
 function pickSimpleExpressionSeed(...values: string[]): string {

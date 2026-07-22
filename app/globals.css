@@ -2958,22 +2958,14 @@ textarea:focus {
   border-color: rgba(245, 176, 85, 0.65);
 }
 
-.daily-lesson-step-notice {
-  margin: 0;
-  border: 1px solid rgba(245, 176, 85, 0.45);
-  border-radius: var(--radius);
-  background: rgba(245, 176, 85, 0.12);
-  color: #ffd796;
-  padding: 10px 12px;
-  font-weight: 800;
-}
-
 .daily-lesson-step-content {
+  overflow: hidden;
   min-height: 0;
 }
 
 .daily-lesson-step-content > .daily-lesson-section {
-  overflow: auto;
+  overflow: hidden;
+  align-content: start;
   height: 100%;
   min-height: 0;
 }
@@ -2987,6 +2979,7 @@ textarea:focus {
 }
 
 .daily-lesson-narrow-step {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: min(900px, 100%);
   height: 100%;
   margin: 0 auto;
@@ -3073,43 +3066,24 @@ textarea:focus {
 
 .daily-lesson-narrow-step > .daily-lesson-single-card,
 .daily-lesson-narrow-step > .daily-lesson-output,
-.daily-lesson-narrow-step > .daily-lesson-complete,
-.daily-lesson-narrow-step > .daily-lesson-shadowing-card {
+.daily-lesson-narrow-step > .daily-lesson-complete {
+  grid-row: 3;
   min-height: 0;
   max-height: 100%;
 }
 
-.daily-lesson-narrow-step > .daily-lesson-single-card,
-.daily-lesson-narrow-step > .daily-lesson-shadowing-card {
+.daily-lesson-narrow-step > .daily-lesson-card-pager {
+  grid-row: 4;
+}
+
+.daily-lesson-narrow-step > .daily-lesson-single-card {
   align-self: stretch;
 }
 
 .daily-lesson-step-content > .daily-lesson-section.daily-lesson-complete,
 .daily-lesson-step-content > .daily-lesson-section:has(.daily-lesson-output) {
+  grid-template-rows: auto minmax(0, 1fr);
   align-content: start;
-}
-
-.daily-lesson-shadowing-card {
-  overflow: auto;
-  display: grid;
-  gap: 14px;
-  max-height: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: rgba(21, 27, 35, 0.72);
-  padding: 18px;
-}
-
-.daily-lesson-shadowing-card > span {
-  color: var(--accent-strong);
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.daily-lesson-shadowing-card p {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.55;
 }
 
 .daily-lesson-meta,
@@ -3373,7 +3347,6 @@ textarea:focus {
 .daily-lesson-learning-item p,
 .daily-lesson-source-sentence,
 .daily-lesson-output p,
-.daily-lesson-shadowing-list p,
 .daily-lesson-question-list h3 {
   margin: 0;
   line-height: 1.65;
@@ -3396,16 +3369,16 @@ textarea:focus {
 .daily-lesson-learning-list,
 .daily-lesson-expression-upgrades,
 .daily-lesson-dictation-list,
-.daily-lesson-shadowing-list,
 .daily-lesson-question-list {
   display: grid;
   gap: 12px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .daily-lesson-learning-item,
 .daily-lesson-expression-upgrade,
 .daily-lesson-dictation,
-.daily-lesson-shadowing-list article,
 .daily-lesson-question-list article,
 .daily-lesson-output,
 .daily-lesson-complete {
@@ -3480,7 +3453,15 @@ textarea:focus {
 
 .daily-lesson-dictation textarea,
 .daily-lesson-output textarea {
-  resize: vertical;
+  resize: none;
+}
+
+.daily-lesson-dictation textarea {
+  min-height: 92px;
+}
+
+.daily-lesson-output textarea {
+  min-height: 110px;
 }
 
 .daily-lesson-diff {
