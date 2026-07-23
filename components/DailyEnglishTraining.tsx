@@ -32,6 +32,7 @@ import {
   trainingLibraryLevels,
   type ExactTrainingLevel
 } from "@/data/dailyTrainingVideoLibrary";
+import { lookupVocab, type VocabEntry } from "@/lib/vocabulary";
 
 interface DailyTrainingApiResponse {
   training?: DailyTraining;
@@ -416,7 +417,9 @@ function LessonWorkspace({
         {activeStep?.id === "review" ? (
           <CompleteLessonPanel
             key={`review-${trainingInstanceKey}`}
+            learningItems={training.learningItems}
             review={training.lessonReview}
+            transcriptSegments={training.transcriptSegments}
             completed={training.completed}
             onAddReview={() =>
               onUpdate((draft) => ({
@@ -1102,26 +1105,49 @@ function OutputPanel({
 
 function CompleteLessonPanel({
   completed,
+  learningItems,
   onAddReview,
   onComplete,
-  review
+  review,
+  transcriptSegments
 }: {
   completed: boolean;
+  learningItems: LearningItem[];
   onAddReview: () => void;
   onComplete: () => void;
   review: DailyTraining["lessonReview"];
+  transcriptSegments: TranscriptSegment[];
 }) {
+  const reviewWords = useMemo(
+    () => extractCefrPlusVocabulary(transcriptSegments, learningItems),
+    [learningItems, transcriptSegments]
+  );
+
   return (
     <section className="daily-lesson-section daily-lesson-complete">
       <div className="daily-lesson-section-head">
-        <h2>Today you learned</h2>
-        {completed ? <span>已完成</span> : null}
+        <h2>本课词汇复盘</h2>
+        <span>{reviewWords.length} 个 CET4+ 词汇</span>
       </div>
-      <ul>
-        <li>3 个重点表达：{review.expressions.join(" / ") || "完成学习项后生成"}</li>
-        <li>2 个声音现象：{review.soundIssues.join(" / ") || "注意弱读、连读和自然停顿"}</li>
-        <li>1 个复习句子：{review.reviewSentence}</li>
-      </ul>
+      {reviewWords.length ? (
+        <div className="daily-lesson-review-vocab-list">
+          {reviewWords.map((item) => (
+            <article key={item.word}>
+              <div>
+                <strong>{item.word}</strong>
+                <span>{item.labels.join(" / ")}</span>
+              </div>
+              <p>{item.phonetic || item.fallbackPronunciation ? `/${item.phonetic || item.fallbackPronunciation}/` : "暂无音标"}</p>
+              <small>{item.translation || item.fallbackMeaning || "暂无释义"}</small>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="daily-lesson-empty-note">本课视频文本里暂时没有匹配到 CET4 及以上词库词汇。</p>
+      )}
+      <p className="daily-lesson-answer">
+        本课复习句：{review.reviewSentence || "完成练习后再回来看这一句。"}
+      </p>
       <div className="daily-lesson-learning-actions">
         <button type="button" onClick={onAddReview}>
           {review.addedToReview ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
@@ -1588,6 +1614,79 @@ function mergeReviewItems(review: ReviewItem[], items: LearningItem[]): ReviewIt
   const existing = new Set(review.map((item) => item.expressionId));
 
   return [...review, ...nextItems.filter((item) => !existing.has(item.expressionId))];
+}
+
+interface ReviewVocabularyItem extends VocabEntry {
+  fallbackMeaning?: string;
+  fallbackPronunciation?: string;
+}
+
+function extractCefrPlusVocabulary(
+  transcriptSegments: TranscriptSegment[],
+  learningItems: LearningItem[]
+): ReviewVocabularyItem[] {
+  const matched = new Map<string, ReviewVocabularyItem>();
+  const fallbackMeanings = new Map<string, string>();
+  const fallbackPronunciations = new Map<string, string>();
+
+  for (const item of learningItems) {
+    for (const token of extractWordTokens(`${item.text} ${item.sourceSentence}`)) {
+      if (!fallbackMeanings.has(token) && item.meaning) {
+        fallbackMeanings.set(token, item.meaning);
+      }
+
+      if (!fallbackPronunciations.has(token) && item.pronunciation) {
+        fallbackPronunciations.set(token, item.pronunciation.replace(/^\/|\/$/g, ""));
+      }
+    }
+  }
+
+  const sources = [
+    transcriptSegments.map((segment) => segment.text).join(" "),
+    learningItems.map((item) => `${item.text} ${item.sourceSentence}`).join(" ")
+  ];
+
+  for (const source of sources) {
+    for (const token of extractWordTokens(source)) {
+      const entry = lookupVocab(token);
+
+      if (!entry || matched.has(entry.word)) {
+        continue;
+      }
+
+      matched.set(entry.word, {
+        ...entry,
+        fallbackMeaning: fallbackMeanings.get(entry.word) ?? fallbackMeanings.get(token),
+        fallbackPronunciation: fallbackPronunciations.get(entry.word) ?? fallbackPronunciations.get(token)
+      });
+    }
+  }
+
+  return [...matched.values()].sort((first, second) => {
+    const labelRank = getReviewWordRank(first.labels) - getReviewWordRank(second.labels);
+
+    return labelRank || first.word.localeCompare(second.word);
+  });
+}
+
+function extractWordTokens(text: string): string[] {
+  return text.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) ?? [];
+}
+
+function getReviewWordRank(labels: string[]): number {
+  if (labels.includes("CET4")) {
+    return 1;
+  }
+
+  if (labels.includes("CET6")) {
+    return 2;
+  }
+
+  if (labels.includes("IELTS")) {
+    return 3;
+  }
+
+  return 4;
 }
 
 function compareWords(userAnswer: string, correctText: string) {

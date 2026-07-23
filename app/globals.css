@@ -3541,6 +3541,49 @@ textarea:focus {
   line-height: 1.6;
 }
 
+.daily-lesson-review-vocab-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.daily-lesson-review-vocab-list article {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.daily-lesson-review-vocab-list article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.daily-lesson-review-vocab-list strong {
+  color: var(--text);
+}
+
+.daily-lesson-review-vocab-list span {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.daily-lesson-review-vocab-list p,
+.daily-lesson-review-vocab-list small {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
 .daily-lesson-empty {
   display: grid;
   place-items: start;
@@ -3702,6 +3745,7 @@ textarea:focus {
   .daily-lesson-transcript-tools,
   .daily-lesson-upgrade-chain,
   .daily-lesson-sticky-footer,
+  .daily-lesson-review-vocab-list,
   .daily-lesson-video-vocab-grid,
   .daily-lesson-options {
     grid-template-columns: 1fr;
