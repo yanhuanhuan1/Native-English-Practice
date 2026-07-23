@@ -3398,7 +3398,40 @@ textarea:focus {
   font-size: 19px;
 }
 
-.daily-lesson-learning-item > div:first-child > span {
+.daily-lesson-learning-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.daily-lesson-learning-title > div:first-child {
+  min-width: 0;
+}
+
+.daily-lesson-learning-status-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 300px;
+}
+
+.daily-lesson-learning-status-actions button {
+  min-height: 34px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.daily-lesson-learning-status-actions button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.daily-lesson-learning-item > div:first-child > span,
+.daily-lesson-learning-title > div:first-child > span {
   color: var(--accent-strong);
   font-size: 12px;
   font-weight: 900;
@@ -3655,6 +3688,15 @@ textarea:focus {
 
   .daily-lesson-video-vocab-grid {
     max-height: 62px;
+  }
+
+  .daily-lesson-learning-title {
+    flex-direction: column;
+  }
+
+  .daily-lesson-learning-status-actions {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .daily-lesson-transcript-tools,

@@ -21,7 +21,6 @@ import type {
   DictationExercise,
   EnglishTrainingRecord,
   LearningItem,
-  LearningItemMastery,
   ReviewItem,
   SpeakingFeedback,
   TranscriptSegment
@@ -50,13 +49,6 @@ interface ServerConfigResponse {
 
 const storageKey = "daily-english-training-records";
 const levelStorageKey = "daily-english-training-level";
-
-const masteryLabels: Record<LearningItemMastery, string> = {
-  unknown: "不认识",
-  fuzzy: "模糊",
-  "known-passive": "认识但不会用",
-  active: "可以主动使用"
-};
 
 type LessonStepId = "listening" | "expressions" | "practice" | "speaking" | "review";
 type LessonStepStatus = "not_started" | "in_progress" | "completed" | "needs_review";
@@ -692,11 +684,35 @@ function ExpressionsStep({
         ))}
       </div>
       <article className="daily-lesson-learning-item daily-lesson-single-card">
-        <div>
-          <span>{getLearningTypeLabel(activeItem.type)}</span>
-          <h3>{activeItem.text}</h3>
-          <p>{activeItem.meaning}</p>
-          <small>{activeItem.pronunciation}</small>
+        <div className="daily-lesson-learning-title">
+          <div>
+            <span>{getLearningTypeLabel(activeItem.type)}</span>
+            <h3>{activeItem.text}</h3>
+            <p>{activeItem.meaning}</p>
+            <small>{activeItem.pronunciation}</small>
+          </div>
+          <div className="daily-lesson-learning-status-actions">
+            <button
+              aria-pressed={activeItem.mastery === "active"}
+              type="button"
+              onClick={() =>
+                onUpdateItem(activeItem.id, {
+                  mastery: activeItem.mastery === "active" ? "unknown" : "active"
+                })
+              }
+            >
+              <CheckCircle2 size={15} />
+              {activeItem.mastery === "active" ? "已掌握" : "标记掌握"}
+            </button>
+            <button
+              aria-pressed={activeItem.saved}
+              type="button"
+              onClick={() => onUpdateItem(activeItem.id, { saved: !activeItem.saved })}
+            >
+              {activeItem.saved ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+              {activeItem.saved ? "已加入复习" : "加入复习"}
+            </button>
+          </div>
         </div>
         <p className="daily-lesson-source-sentence">视频原句：{activeItem.sourceSentence}</p>
         <div className="daily-lesson-chip-row">
@@ -727,22 +743,6 @@ function ExpressionsStep({
             <Play size={15} />
             朗读完整句
           </button>
-          <button type="button" onClick={() => onUpdateItem(activeItem.id, { saved: !activeItem.saved })}>
-            {activeItem.saved ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
-            {activeItem.saved ? "已收藏" : "收藏"}
-          </button>
-          <select
-            value={activeItem.mastery}
-            onChange={(event) =>
-              onUpdateItem(activeItem.id, { mastery: event.target.value as LearningItemMastery })
-            }
-          >
-            {Object.entries(masteryLabels).map(([key, label]) => (
-              <option value={key} key={key}>
-                {label}
-              </option>
-            ))}
-          </select>
         </div>
         <div className="daily-lesson-card-pager">
           <button disabled={activeIndex === 0} type="button" onClick={() => setActiveIndex((value) => value - 1)}>
