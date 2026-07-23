@@ -50,6 +50,39 @@ interface ServerConfigResponse {
 
 const storageKey = "daily-english-training-records";
 const levelStorageKey = "daily-english-training-level";
+const minReviewVocabularyCount = 10;
+const reviewVocabularyStopWords = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "from",
+  "into",
+  "about",
+  "your",
+  "you",
+  "are",
+  "have",
+  "has",
+  "was",
+  "were",
+  "been",
+  "can",
+  "will",
+  "would",
+  "could",
+  "should",
+  "our",
+  "their",
+  "there",
+  "than",
+  "then",
+  "not",
+  "just",
+  "like"
+]);
 
 type LessonStepId = "listening" | "expressions" | "practice" | "speaking" | "review";
 type LessonStepStatus = "not_started" | "in_progress" | "completed" | "needs_review";
@@ -418,7 +451,9 @@ function LessonWorkspace({
           <CompleteLessonPanel
             key={`review-${trainingInstanceKey}`}
             learningItems={training.learningItems}
+            outputTask={training.outputTask}
             review={training.lessonReview}
+            topic={training.topic}
             transcriptSegments={training.transcriptSegments}
             completed={training.completed}
             onAddReview={() =>
@@ -433,7 +468,7 @@ function LessonWorkspace({
         ) : null}
       </section>
 
-      {activeStep ? (
+      {activeStep && activeStep.id !== "review" ? (
         <StickyStepFooter
           currentIndex={currentStepIndex}
           currentStep={activeStep}
@@ -1108,26 +1143,30 @@ function CompleteLessonPanel({
   learningItems,
   onAddReview,
   onComplete,
+  outputTask,
   review,
+  topic,
   transcriptSegments
 }: {
   completed: boolean;
   learningItems: LearningItem[];
   onAddReview: () => void;
   onComplete: () => void;
+  outputTask: DailyTraining["outputTask"];
   review: DailyTraining["lessonReview"];
+  topic: string;
   transcriptSegments: TranscriptSegment[];
 }) {
   const reviewWords = useMemo(
-    () => extractCefrPlusVocabulary(transcriptSegments, learningItems),
-    [learningItems, transcriptSegments]
+    () => extractCefrPlusVocabulary({ learningItems, outputTask, review, topic, transcriptSegments }),
+    [learningItems, outputTask, review, topic, transcriptSegments]
   );
 
   return (
     <section className="daily-lesson-section daily-lesson-complete">
       <div className="daily-lesson-section-head">
         <h2>本课词汇复盘</h2>
-        <span>{reviewWords.length} 个 CET4+ 词汇</span>
+        <span>{reviewWords.length} 个复盘词汇</span>
       </div>
       {reviewWords.length ? (
         <div className="daily-lesson-review-vocab-list">
@@ -1621,16 +1660,27 @@ interface ReviewVocabularyItem extends VocabEntry {
   fallbackPronunciation?: string;
 }
 
-function extractCefrPlusVocabulary(
-  transcriptSegments: TranscriptSegment[],
-  learningItems: LearningItem[]
-): ReviewVocabularyItem[] {
+interface ReviewVocabularyContext {
+  learningItems: LearningItem[];
+  outputTask: DailyTraining["outputTask"];
+  review: DailyTraining["lessonReview"];
+  topic: string;
+  transcriptSegments: TranscriptSegment[];
+}
+
+function extractCefrPlusVocabulary({
+  learningItems,
+  outputTask,
+  review,
+  topic,
+  transcriptSegments
+}: ReviewVocabularyContext): ReviewVocabularyItem[] {
   const matched = new Map<string, ReviewVocabularyItem>();
   const fallbackMeanings = new Map<string, string>();
   const fallbackPronunciations = new Map<string, string>();
 
   for (const item of learningItems) {
-    for (const token of extractWordTokens(`${item.text} ${item.sourceSentence}`)) {
+    for (const token of extractWordTokens(getLearningItemReviewText(item))) {
       if (!fallbackMeanings.has(token) && item.meaning) {
         fallbackMeanings.set(token, item.meaning);
       }
@@ -1642,8 +1692,16 @@ function extractCefrPlusVocabulary(
   }
 
   const sources = [
+    topic,
     transcriptSegments.map((segment) => segment.text).join(" "),
-    learningItems.map((item) => `${item.text} ${item.sourceSentence}`).join(" ")
+    learningItems.map((item) => getLearningItemReviewText(item)).join(" "),
+    [
+      review.expressions.join(" "),
+      review.reviewSentence,
+      review.soundIssues.join(" "),
+      outputTask.prompt,
+      outputTask.transcript ?? ""
+    ].join(" ")
   ];
 
   for (const source of sources) {
@@ -1662,11 +1720,56 @@ function extractCefrPlusVocabulary(
     }
   }
 
+  if (matched.size < minReviewVocabularyCount) {
+    addLearningItemSupplements(matched, learningItems, minReviewVocabularyCount);
+  }
+
   return [...matched.values()].sort((first, second) => {
     const labelRank = getReviewWordRank(first.labels) - getReviewWordRank(second.labels);
 
     return labelRank || first.word.localeCompare(second.word);
-  });
+  }).slice(0, 24);
+}
+
+function addLearningItemSupplements(
+  matched: Map<string, ReviewVocabularyItem>,
+  learningItems: LearningItem[],
+  minCount: number
+): void {
+  for (const item of learningItems) {
+    if (matched.size >= minCount) {
+      return;
+    }
+
+    for (const word of extractWordTokens(getLearningItemReviewText(item))) {
+      if (matched.size >= minCount) {
+        return;
+      }
+
+      if (word.length < 3 || reviewVocabularyStopWords.has(word) || matched.has(word)) {
+        continue;
+      }
+
+      matched.set(word, {
+        word,
+        levels: [],
+        labels: [item.level || "本课重点"],
+        translation: item.meaning,
+        phonetic: item.pronunciation.replace(/^\/|\/$/g, ""),
+        fallbackMeaning: item.meaning,
+        fallbackPronunciation: item.pronunciation.replace(/^\/|\/$/g, "")
+      });
+    }
+  }
+}
+
+function getLearningItemReviewText(item: LearningItem): string {
+  return [
+    item.text,
+    item.sourceSentence,
+    item.reusableExample,
+    item.collocations.join(" ")
+  ].join(" ");
 }
 
 function extractWordTokens(text: string): string[] {
