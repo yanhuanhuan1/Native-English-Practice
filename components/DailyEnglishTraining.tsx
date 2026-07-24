@@ -32,6 +32,7 @@ import {
   trainingLibraryLevels,
   type ExactTrainingLevel
 } from "@/data/dailyTrainingVideoLibrary";
+import { speakEnglishWithBestVoice } from "@/lib/speech";
 import { lookupVocab, type VocabEntry } from "@/lib/vocabulary";
 
 interface DailyTrainingApiResponse {
@@ -1861,33 +1862,23 @@ function speakTrainingText(text: string) {
     return;
   }
 
+  if (!("speechSynthesis" in window)) {
+    globalThis.alert("当前浏览器不支持朗读。");
+    return;
+  }
+
   const value = text.trim();
 
   if (!value) {
     return;
   }
 
-  if (!window.speechSynthesis) {
+  const utterance = speakEnglishWithBestVoice(value, { rate: 0.9, pitch: 1 });
+
+  if (!utterance) {
     globalThis.alert("当前浏览器不支持朗读。");
     return;
   }
-
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(value);
-  utterance.lang = "en-US";
-  utterance.rate = 0.88;
-  utterance.pitch = 1;
-
-  const englishVoice = window.speechSynthesis
-    .getVoices()
-    .find((voice) => /^en(-|_)/i.test(voice.lang));
-
-  if (englishVoice) {
-    utterance.voice = englishVoice;
-  }
-
-  window.speechSynthesis.speak(utterance);
 }
 
 function getLearningTypeLabel(type: LearningItem["type"]): string {

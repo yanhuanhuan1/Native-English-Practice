@@ -13,6 +13,7 @@ import {
   saveGeneratedScenarios,
   saveInsight
 } from "@/lib/storage";
+import { speakEnglishWithBestVoice } from "@/lib/speech";
 import { DIFFICULTY_OPTIONS, TOPIC_OPTIONS, type Difficulty, type Scenario, type Topic } from "@/types/scenario";
 import type { Attempt, InsightReport, InsightState, ScoreResult } from "@/types/scoring";
 
@@ -504,30 +505,21 @@ export function PracticeApp({ initialAiConfigured }: PracticeAppProps) {
 
     stopSpeech();
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-    };
-    utterance.onend = () => {
-      setIsSpeaking(false);
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-    };
-
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice =
-      voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ?? voices[0] ?? null;
-
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
+    const utterance = speakEnglishWithBestVoice(text, {
+      pitch: 1,
+      rate: 0.92,
+      onStart: () => {
+        setIsSpeaking(true);
+      },
+      onEnd: () => {
+        setIsSpeaking(false);
+      },
+      onError: () => {
+        setIsSpeaking(false);
+      }
+    });
 
     speechUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
   }
 
   function stopSpeech() {
