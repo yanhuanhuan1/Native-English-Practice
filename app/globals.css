@@ -3526,10 +3526,32 @@ textarea:focus {
   background: var(--accent-soft);
 }
 
+.daily-lesson-options button[data-correct="true"] {
+  border-color: var(--accent);
+  background: rgba(70, 211, 169, 0.18);
+  color: var(--accent-strong);
+}
+
+.daily-lesson-options button[data-wrong="true"] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .daily-lesson-answer {
   margin: 0;
   border-left: 3px solid var(--accent);
   padding-left: 10px;
+}
+
+.daily-lesson-answer[data-result="correct"] {
+  border-left-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.daily-lesson-answer[data-result="wrong"] {
+  border-left-color: var(--danger);
+  color: var(--danger);
 }
 
 .daily-lesson-complete ul {

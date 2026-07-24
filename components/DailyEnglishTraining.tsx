@@ -985,6 +985,8 @@ function SingleComprehensionQuestion({
   question: ComprehensionQuestion;
   questions: ComprehensionQuestion[];
 }) {
+  const isCorrect = question.completed && question.userAnswer === question.answer;
+
   function answerQuestion(answer: string) {
     onUpdate(
       questions.map((item) =>
@@ -999,7 +1001,9 @@ function SingleComprehensionQuestion({
       <div className="daily-lesson-options">
         {question.options.map((option) => (
           <button
+            data-correct={question.completed && option === question.answer}
             data-selected={question.userAnswer === option}
+            data-wrong={question.completed && question.userAnswer === option && option !== question.answer}
             key={option}
             type="button"
             onClick={() => answerQuestion(option)}
@@ -1009,8 +1013,8 @@ function SingleComprehensionQuestion({
         ))}
       </div>
       {question.completed ? (
-        <p className="daily-lesson-answer">
-          答案：{question.answer}。{question.explanation}
+        <p className="daily-lesson-answer" data-result={isCorrect ? "correct" : "wrong"}>
+          {isCorrect ? "回答正确" : "回答错误"}。正确答案：{question.answer}。{question.explanation}
         </p>
       ) : null}
     </article>
