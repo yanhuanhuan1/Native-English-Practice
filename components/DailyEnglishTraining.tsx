@@ -457,6 +457,7 @@ function LessonWorkspace({
             topic={training.topic}
             transcriptSegments={training.transcriptSegments}
             completed={training.completed}
+            onSpeakText={speakTrainingText}
             onAddReview={() =>
               onUpdate((draft) => ({
                 ...draft,
@@ -1148,6 +1149,7 @@ function CompleteLessonPanel({
   learningItems,
   onAddReview,
   onComplete,
+  onSpeakText,
   outputTask,
   review,
   topic,
@@ -1157,6 +1159,7 @@ function CompleteLessonPanel({
   learningItems: LearningItem[];
   onAddReview: () => void;
   onComplete: () => void;
+  onSpeakText: (text: string) => void;
   outputTask: DailyTraining["outputTask"];
   review: DailyTraining["lessonReview"];
   topic: string;
@@ -1177,9 +1180,15 @@ function CompleteLessonPanel({
         <div className="daily-lesson-review-vocab-list">
           {reviewWords.map((item) => (
             <article key={item.word}>
-              <div>
-                <strong>{item.word}</strong>
-                <span>{item.labels.join(" / ")}</span>
+              <div className="daily-lesson-review-vocab-head">
+                <div>
+                  <strong>{item.word}</strong>
+                  <span>{item.labels.join(" / ")}</span>
+                </div>
+                <button type="button" onClick={() => onSpeakText(item.word)}>
+                  <Play size={14} />
+                  AI朗读
+                </button>
               </div>
               <p>{item.phonetic || item.fallbackPronunciation ? `/${item.phonetic || item.fallbackPronunciation}/` : "暂无音标"}</p>
               <small>{item.translation || item.fallbackMeaning || "暂无释义"}</small>

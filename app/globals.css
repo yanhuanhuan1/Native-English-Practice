@@ -3581,11 +3581,24 @@ textarea:focus {
   padding: 12px;
 }
 
-.daily-lesson-review-vocab-list article > div {
+.daily-lesson-review-vocab-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.daily-lesson-review-vocab-head > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.daily-lesson-review-vocab-head button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
 }
 
 .daily-lesson-review-vocab-list strong {
